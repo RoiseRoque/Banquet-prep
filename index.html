@@ -21,12 +21,13 @@
       min-width: 48px;
     }
 
-    /* Ultra-clean black-and-white clipboard print layout */
+    /* Ultra-clean, ink-efficient clipboard print layout (no boxes or divider lines) */
     @media print {
       body {
         background: #ffffff !important;
         color: #000000 !important;
-        font-size: 10.5pt;
+        font-size: 10pt;
+        line-height: 1.3;
         padding: 0 !important;
       }
       .no-print {
@@ -36,33 +37,24 @@
         display: block !important;
       }
       .print-section {
-        border: 1.5px solid #000000 !important;
-        border-radius: 6px !important;
-        box-shadow: none !important;
-        background: #ffffff !important;
-        margin-bottom: 12px !important;
+        margin-bottom: 10px !important;
         break-inside: avoid;
       }
       .print-box {
         display: inline-block !important;
-        width: 15px !important;
-        height: 15px !important;
-        border: 1.8px solid #000000 !important;
-        margin-right: 10px !important;
-        vertical-align: middle;
+        width: 13px !important;
+        height: 13px !important;
+        border: 1.4px solid #000000 !important;
+        margin-right: 8px !important;
+        vertical-align: -1px;
         background: #ffffff !important;
-      }
-      .print-tag {
-        border: 1px solid #000000 !important;
-        background: #ffffff !important;
-        color: #000000 !important;
       }
       .print-clean-text {
         text-decoration: none !important;
         opacity: 1 !important;
       }
       @page {
-        margin: 0.4in;
+        margin: 0.35in;
       }
     }
   </style>
@@ -441,7 +433,7 @@
     }
 
     async function scanBEOImages(imageParts) {
-      const savedKey = localStorage.getItem(STORAGE_KEY_API) || "AIzaSyAIHykqRw2FpEE7Ob8Hz2TkI7VVd8Yb_KM";
+      const savedKey = localStorage.getItem(STORAGE_KEY_API) || "";
       const apiKey = savedKey.trim();
       if (!apiKey) {
         throw new Error('MISSING_API_KEY');
@@ -1184,7 +1176,7 @@ For each item return:
       return html;
     }
 
-    // Build Ultra-Clean Clipboard Print Sheet (Total Prep Summary + Event Breakdown)
+    // Build Ultra-Clean, Ink-Efficient Clipboard Print Sheet (No boxes, lines, or duplicate counts)
     function printPrepList() {
       const deptId = state.activeTab;
       const dept = DEPARTMENTS[deptId];
@@ -1193,45 +1185,43 @@ For each item return:
 
       const printEl = document.getElementById('printContainer');
       printEl.innerHTML = `
-        <div class="border-b-2 border-black pb-2 mb-4 flex justify-between items-end">
+        <div class="mb-3 flex justify-between items-baseline">
           <div>
-            <h1 class="text-2xl font-black uppercase">${dept.label} — Prep List</h1>
-            <p class="text-sm font-bold">${todayLabel}</p>
+            <span class="text-lg font-black uppercase">${dept.label} PREP</span>
+            <span class="text-xs font-bold ml-2">${todayLabel}</span>
           </div>
-          <div class="text-xs font-bold text-right">
-            <p>COOK: ________________________</p>
-          </div>
+          <div class="text-xs font-bold">COOK: ___________________</div>
         </div>
 
         <!-- 1. TOTAL PREP SUMMARY (PLATED COMBINED + BUFFET SEPARATE) -->
-        <div class="print-section p-3 mb-4">
-          <h2 class="text-sm font-black uppercase border-b border-black pb-1 mb-2">Total Prep Summary</h2>
+        <div class="print-section mb-4">
+          <div class="text-xs font-black uppercase tracking-wider mb-1">TOTAL PREP</div>
           ${plated.length ? `
-            <div class="divide-y divide-gray-300">
+            <div>
               ${plated.map(g => `
-                <div class="py-1.5 flex items-center justify-between">
+                <div class="py-0.5 flex items-baseline justify-between gap-2">
                   <div>
                     <span class="print-box"></span>
-                    <span class="font-extrabold text-base">${escapeHtml(g.name)}</span>
+                    <span class="font-bold">${escapeHtml(g.name)}</span>
                   </div>
-                  <span class="font-black text-base">${g.totalQty} ${escapeHtml(g.unit)}</span>
+                  <span class="font-black shrink-0">${g.totalQty} ${escapeHtml(g.unit)}</span>
                 </div>
               `).join('')}
             </div>
           ` : ''}
 
           ${buffet.length ? `
-            <div class="${plated.length ? 'mt-3 pt-2 border-t-2 border-black' : ''}">
-              <div class="text-xs font-black uppercase mb-1">Buffet Items (Scale to Guaranteed Pax)</div>
-              <div class="divide-y divide-gray-300">
+            <div class="${plated.length ? 'mt-2' : ''}">
+              <div class="text-xs font-black uppercase mb-0.5">Buffet (Scale to Pax)</div>
+              <div>
                 ${buffet.map(b => `
-                  <div class="py-1.5 flex items-center justify-between gap-2">
+                  <div class="py-0.5 flex items-baseline justify-between gap-2">
                     <div>
                       <span class="print-box"></span>
-                      <span class="font-extrabold text-base">${escapeHtml(b.name)}</span>
-                      ${b.notes ? `<span class="text-xs italic"> — ${escapeHtml(b.notes)}</span>` : ''}
+                      <span class="font-bold">${escapeHtml(b.name)}</span>
+                      ${b.notes ? `<span class="text-xs"> — ${escapeHtml(b.notes)}</span>` : ''}
                     </div>
-                    <span class="font-black text-xs uppercase shrink-0">Buffet (${b.guestCount} Pax)</span>
+                    <span class="font-bold text-xs shrink-0">Buffet (${b.guestCount} Pax)</span>
                   </div>
                 `).join('')}
               </div>
@@ -1242,33 +1232,30 @@ For each item return:
         </div>
 
         <!-- 2. EVENT BREAKDOWN -->
-        <h2 class="text-sm font-black uppercase mb-2">By Event</h2>
+        <div class="text-xs font-black uppercase tracking-wider mb-1.5">BY EVENT</div>
         ${eventsForDept.map(ev => {
           const isBuffet = ev.serviceStyle === 'Buffet';
           const items = ev.items.filter(i => i.department === deptId);
           return `
-            <div class="print-section p-3">
-              <div class="border-b border-black pb-1.5 mb-2">
-                <div class="font-black text-sm">
-                  <span class="print-tag px-1.5 py-0.5 text-xs uppercase mr-1">${isBuffet ? `BUFFET — ${ev.guestCount} PAX` : `PLATED — ${ev.guestCount} PAX`}</span>
-                  ${escapeHtml(ev.serviceTime)} &nbsp;|&nbsp; ${escapeHtml(ev.location)} &nbsp;—&nbsp; ${escapeHtml(ev.eventName)}
-                </div>
-                ${ev.allergiesAndNotes && ev.allergiesAndNotes.length ? `
-                  <div class="text-xs font-black mt-1">
-                    ALLERGIES: ${ev.allergiesAndNotes.map(a => escapeHtml(a)).join(' • ')}
-                  </div>
-                ` : ''}
+            <div class="print-section mb-3">
+              <div class="font-black text-xs mb-0.5">
+                [${isBuffet ? `BUFFET • ${ev.guestCount} PAX` : `PLATED • ${ev.guestCount} PAX`}]
+                ${escapeHtml(ev.serviceTime)} | ${escapeHtml(ev.location)} — ${escapeHtml(ev.eventName)}
               </div>
-              <div class="divide-y divide-gray-200">
+              ${ev.allergiesAndNotes && ev.allergiesAndNotes.length ? `
+                <div class="text-xs font-bold mb-0.5">
+                  ALLERGIES: ${ev.allergiesAndNotes.map(a => escapeHtml(a)).join(' • ')}
+                </div>
+              ` : ''}
+              <div>
                 ${items.map(item => `
-                  <div class="py-1.5 flex items-baseline justify-between gap-3">
+                  <div class="py-0.5 flex items-baseline justify-between gap-2">
                     <div>
                       <span class="print-box"></span>
-                      ${!isBuffet && item.quantity ? `<span class="font-black mr-1">${item.quantity}x</span>` : ''}
                       <span class="font-bold">${escapeHtml(item.name)}</span>
-                      ${item.notes ? `<span class="text-xs italic"> — ${escapeHtml(item.notes)}</span>` : ''}
+                      ${item.notes ? `<span class="text-xs"> — ${escapeHtml(item.notes)}</span>` : ''}
                     </div>
-                    <span class="font-black shrink-0 text-xs sm:text-sm">${!isBuffet && item.quantity ? `${item.quantity} ${escapeHtml(item.unit || 'portions')}` : `Buffet (${ev.guestCount} Pax)`}</span>
+                    <span class="font-black shrink-0 text-xs">${!isBuffet && item.quantity ? `${item.quantity} ${escapeHtml(item.unit || 'portions')}` : `Buffet (${ev.guestCount} Pax)`}</span>
                   </div>
                 `).join('')}
               </div>
