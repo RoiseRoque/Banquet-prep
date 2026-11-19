@@ -490,7 +490,7 @@
     }
 
     async function callGeminiWithFallback(apiKey, payload) {
-      const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+      const models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-3-flash-preview'];
       let lastError = 'API_ERROR';
 
       for (const model of models) {
@@ -517,6 +517,31 @@
           throw new Error(errMsg);
         }
       }
+
+      // Dynamic fallback: query available models on this API key if hardcoded names change
+      try {
+        const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          const activeFlash = (listData.models || []).find(m =>
+            (m.supportedGenerationMethods || []).includes('generateContent') &&
+            m.name.includes('gemini') &&
+            m.name.includes('flash') &&
+            !m.name.includes('2.0')
+          );
+          if (activeFlash) {
+            const retryRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${activeFlash.name}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            if (retryRes.ok) {
+              return await retryRes.json();
+            }
+          }
+        }
+      } catch (e) {}
+
       throw new Error(lastError);
     }
 
