@@ -93,7 +93,8 @@
             <span class="hidden sm:inline">Print List</span>
           </button>
 
-          <button onclick="openSettingsModal()" title="API Key Settings" class="touch-target w-11 h-11 rounded-xl border-2 border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-600 transition">
+          <button onclick="openSettingsModal()" id="settingsBtn" title="API Key Settings" class="relative touch-target w-11 h-11 rounded-xl border-2 border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-600 transition">
+            <span id="apiStatusDot" class="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500"></span>
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -264,12 +265,16 @@
     <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
       <h3 class="text-lg font-black text-slate-900">BEO Scanner API Key</h3>
       <p class="text-xs text-slate-600 mt-1">
-        Paste your free Google Gemini API key to enable live BEO photo scanning when hosted on the web. Stored locally on this device.
+        Paste your free Google Gemini API key (from <span class="font-bold">aistudio.google.com</span>) to enable live BEO photo scanning. Saved locally on this device.
       </p>
-      <input type="password" id="apiKeyInput" placeholder="AIzaSy..." class="w-full mt-4 px-3.5 py-2.5 rounded-xl border-2 border-slate-200 focus:border-slate-900 outline-none font-mono text-sm" />
-      <div class="flex items-center justify-end gap-2 mt-5">
-        <button onclick="closeSettingsModal()" class="touch-target px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-extrabold text-sm">Cancel</button>
-        <button onclick="saveApiKey()" class="touch-target px-5 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-sm">Save Key</button>
+      <input type="text" id="apiKeyInput" placeholder="AIzaSy..." class="w-full mt-4 px-3.5 py-2.5 rounded-xl border-2 border-slate-200 focus:border-slate-900 outline-none font-mono text-sm" />
+      <p id="apiTestStatus" class="hidden text-xs font-bold mt-2 px-3 py-2 rounded-xl"></p>
+      <div class="flex items-center justify-between gap-2 mt-5">
+        <button onclick="testApiKey()" id="testApiBtn" class="touch-target px-3.5 py-2 rounded-xl border-2 border-slate-200 hover:bg-slate-50 text-slate-800 font-extrabold text-xs sm:text-sm">Test Key</button>
+        <div class="flex items-center gap-2">
+          <button onclick="closeSettingsModal()" class="touch-target px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-extrabold text-sm">Cancel</button>
+          <button onclick="saveApiKey()" class="touch-target px-5 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-sm">Save Key</button>
+        </div>
       </div>
     </div>
   </div>
@@ -278,7 +283,7 @@
   <div id="dialogModal" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4 no-print">
     <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
       <h3 class="text-lg font-black text-slate-900" id="dialogTitle">Notice</h3>
-      <p class="text-sm text-slate-600 mt-1.5" id="dialogMessage"></p>
+      <p class="text-sm text-slate-600 mt-1.5 whitespace-pre-line" id="dialogMessage"></p>
       <div class="flex items-center justify-end gap-2 mt-5" id="dialogButtons"></div>
     </div>
   </div>
@@ -317,10 +322,10 @@
 
     let state = {
       events: loadFromStorage(STORAGE_KEY_EVENTS, []),
-      stationOverrides: loadFromStorage(STORAGE_KEY_OVERRIDES, {}), // remembers chef station reassignments
-      activeTab: 'hotBanquet', // 'hotBanquet' | 'gardeMange' | 'pastry'
-      subView: 'byEvent',      // 'byEvent' | 'totalPrep'
-      reviewQueue: [],         // queue of multiple scanned events awaiting verification
+      stationOverrides: loadFromStorage(STORAGE_KEY_OVERRIDES, {}),
+      activeTab: 'hotBanquet',
+      subView: 'byEvent',
+      reviewQueue: [],
       reviewQueueTotal: 0,
       reviewDraft: null,
       editingEventId: null
@@ -339,8 +344,14 @@
       try {
         localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(state.events));
         localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(state.stationOverrides));
-      } catch (e) {
-        // Ignore storage quota errors gracefully
+      } catch (e) {}
+    }
+
+    function updateApiIndicator() {
+      const hasKey = Boolean((localStorage.getItem(STORAGE_KEY_API) || '').trim());
+      const dot = document.getElementById('apiStatusDot');
+      if (dot) {
+        dot.className = `absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full ${hasKey ? 'bg-emerald-500' : 'bg-rose-500'}`;
       }
     }
 
@@ -351,11 +362,24 @@
       year: 'numeric'
     });
     document.getElementById('currentDateDisplay').textContent = todayLabel;
+    updateApiIndicator();
 
     // ==========================================
-    // 2. BEO PHOTO SCANNER (GEMINI 2.5 FLASH)
+    // 2. BEO PHOTO SCANNER (GEMINI VISION)
     // ==========================================
     function triggerScanUpload() {
+      const savedKey = (localStorage.getItem(STORAGE_KEY_API) || '').trim();
+      if (!savedKey) {
+        showDialog(
+          'Scanner API Key Not Set',
+          'Before scanning BEO photos, tap "Add API Key" and paste your Google Gemini API key.',
+          [
+            { label: 'Add API Key', primary: true, onClick: () => openSettingsModal() },
+            { label: 'Cancel', primary: false }
+          ]
+        );
+        return;
+      }
       const input = document.getElementById('beoFileInput');
       input.value = '';
       input.click();
@@ -370,11 +394,16 @@
       modal.classList.remove('hidden');
 
       try {
-        statusEl.textContent = `Processing ${files.length} BEO photo${files.length > 1 ? 's' : ''}...`;
-        const imageParts = await Promise.all(files.map(compressImageToPart));
+        statusEl.textContent = `Preparing ${files.length} BEO photo${files.length > 1 ? 's' : ''}...`;
+        const imageParts = [];
+        for (let i = 0; i < files.length; i++) {
+          statusEl.textContent = `Compressing photo ${i + 1} of ${files.length}...`;
+          imageParts.push(await compressImageToPart(files[i]));
+        }
+
+        statusEl.textContent = `Reading menu items & sorting stations...`;
         const extractedEvents = await scanBEOImages(imageParts);
 
-        // Apply any learned station overrides from past edits across all detected events
         extractedEvents.forEach(ev => {
           ev.items.forEach(item => {
             const learnedDept = state.stationOverrides[item.name.trim().toLowerCase()];
@@ -388,16 +417,14 @@
         startReviewQueue(extractedEvents);
       } catch (err) {
         modal.classList.add('hidden');
-        const needsKey = err.message === 'MISSING_API_KEY';
+        const detail = err.message || 'Unknown error';
+        const isKeyIssue = detail.includes('API_KEY') || detail.includes('API key') || detail.includes('400') || detail.includes('403');
         showDialog(
-          needsKey ? 'API Key Needed for Scanner' : 'Could Not Read BEO Photos',
-          needsKey
-            ? 'Tap the gear icon in the top-right corner to add your Gemini API key, or enter BEOs manually.'
-            : 'Please ensure the BEO photos are clear and well-lit (tip: upload 3–5 photos per batch for best results), or enter prep items manually.',
+          isKeyIssue ? 'API Key Rejected by Google' : 'Could Not Read BEO Photos',
+          `Reason: ${detail}\n\nTips: Check your API key in the Gear settings, or scan 2–4 clear photos at a time.`,
           [
-            needsKey
-              ? { label: 'Add API Key', primary: true, onClick: () => openSettingsModal() }
-              : { label: 'Enter Manually', primary: true, onClick: () => openManualEventModal() },
+            { label: 'Check API Key', primary: true, onClick: () => openSettingsModal() },
+            { label: 'Enter Manually', primary: false, onClick: () => openManualEventModal() },
             { label: 'Close', primary: false }
           ]
         );
@@ -410,7 +437,7 @@
         reader.onload = () => {
           const img = new Image();
           img.onload = () => {
-            const maxDim = 1500;
+            const maxDim = 2000;
             let w = img.width;
             let h = img.height;
             if (w > maxDim || h > maxDim) {
@@ -421,27 +448,55 @@
             canvas.width = w;
             canvas.height = h;
             canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-            const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+            const base64 = canvas.toDataURL('image/jpeg', 0.88).split(',')[1];
             resolve({ inlineData: { mimeType: 'image/jpeg', data: base64 } });
           };
-          img.onerror = reject;
+          img.onerror = () => reject(new Error('Could not decode image file.'));
           img.src = reader.result;
         };
-        reader.onerror = reject;
+        reader.onerror = () => reject(new Error('Could not read photo from device.'));
         reader.readAsDataURL(file);
       });
     }
 
+    async function callGeminiWithFallback(apiKey, payload) {
+      const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+      let lastError = 'API_ERROR';
+
+      for (const model of models) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          return await res.json();
+        }
+
+        let errMsg = `HTTP ${res.status}`;
+        try {
+          const errBody = await res.json();
+          if (errBody?.error?.message) errMsg = errBody.error.message;
+        } catch (e) {}
+        lastError = `${model}: ${errMsg}`;
+
+        // Stop immediately on invalid API key or billing/quota errors
+        if (res.status === 400 || res.status === 403 || res.status === 429) {
+          throw new Error(errMsg);
+        }
+      }
+      throw new Error(lastError);
+    }
+
     async function scanBEOImages(imageParts) {
-      const savedKey = localStorage.getItem(STORAGE_KEY_API) || "";
-      const apiKey = savedKey.trim();
+      const apiKey = (localStorage.getItem(STORAGE_KEY_API) || '').trim();
       if (!apiKey) {
         throw new Error('MISSING_API_KEY');
       }
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-      const systemPrompt = `You are a Banquet Chef creating a single daily kitchen prep list from a batch of Banquet Event Order (BEO) photos.
+      const systemPrompt = `You are a Banquet Chef creating a single daily kitchen prep list from Banquet Event Order (BEO) photos.
 The uploaded photos may contain MULTIPLE DIFFERENT EVENTS or multiple pages of the same event.
 Group pages that belong to the SAME event together, and output a SEPARATE event object in the "events" array for each distinct function/event.
 Extract ONLY essential prep information (ignore room setup, AV, linen, billing, and equipment clutter).
@@ -473,7 +528,7 @@ For each item return:
         contents: [{
           role: "user",
           parts: [
-            { text: "Extract all distinct banquet events and their prep items from these BEO photos." },
+            { text: "Read these Banquet Event Order (BEO) photos and extract all distinct events and their food prep items." },
             ...imageParts
           ]
         }],
@@ -518,18 +573,16 @@ For each item return:
         }
       };
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      const data = await callGeminiWithFallback(apiKey, payload);
+      const candidate = data?.candidates?.[0];
+      const text = candidate?.content?.parts?.[0]?.text;
+      if (!text) {
+        const blockReason = candidate?.finishReason || 'No text returned';
+        throw new Error(`Scanner could not extract text (${blockReason}).`);
+      }
 
-      if (!res.ok) throw new Error('API_ERROR');
-      const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) throw new Error('EMPTY_RESPONSE');
-
-      const parsed = JSON.parse(text);
+      const cleanedJson = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+      const parsed = JSON.parse(cleanedJson);
       const rawEvents = Array.isArray(parsed.events) && parsed.events.length ? parsed.events : [parsed];
 
       return rawEvents.map((ev, eIdx) => {
@@ -655,7 +708,7 @@ For each item return:
       if (!state.reviewDraft.serviceStyle) state.reviewDraft.serviceStyle = 'Plated';
 
       const inQueue = state.reviewQueue.length > 0;
-      const currentIdx = state.reviewQueueTotal - state.reviewQueue.length;
+      const currentIdx = state.reviewQueueTotal - state.reviewQueue.length + 1;
 
       document.getElementById('reviewModalTitle').textContent = editingId
         ? 'Edit Event Prep'
@@ -844,7 +897,6 @@ For each item return:
           }))
       };
 
-      // Cache station assignments for future BEO scans
       cleanedEvent.items.forEach(item => {
         state.stationOverrides[item.name.trim().toLowerCase()] = item.department;
       });
@@ -1005,7 +1057,6 @@ For each item return:
       document.getElementById('emptyState').classList.toggle('hidden', hasEvents);
       document.getElementById('controlsBar').classList.toggle('hidden', !hasEvents);
 
-      // Update Department Tab Counts & Active Styles
       ['hotBanquet', 'gardeMange', 'pastry'].forEach(deptId => {
         let remaining = 0;
         state.events.forEach(ev => {
@@ -1023,7 +1074,6 @@ For each item return:
         }`;
       });
 
-      // Update View Pill Styles
       const byEvBtn = document.getElementById('viewBtn-byEvent');
       const totBtn = document.getElementById('viewBtn-totalPrep');
       byEvBtn.className = `px-4 py-2 rounded-lg text-sm font-extrabold transition ${
@@ -1057,7 +1107,6 @@ For each item return:
         const items = ev.items.filter(i => i.department === deptId);
         return `
           <section class="bg-white rounded-2xl border-2 ${isBuffet ? 'border-amber-400' : 'border-slate-200'} shadow-sm overflow-hidden">
-            <!-- Clean Event Header: Time, Location, Service Style Badge, Pax, Event Name -->
             <div class="px-4 py-3.5 ${isBuffet ? 'bg-amber-50/60' : 'bg-slate-50'} border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div class="flex flex-wrap items-center gap-2 text-xs sm:text-sm font-black">
@@ -1076,7 +1125,6 @@ For each item return:
               </button>
             </div>
 
-            <!-- Compact Single-Line Allergy Alert (Only if present) -->
             ${ev.allergiesAndNotes && ev.allergiesAndNotes.length ? `
               <div class="px-4 py-2 bg-rose-50 border-b border-rose-200 flex flex-wrap items-center gap-1.5">
                 <span class="text-xs font-black text-rose-800 uppercase">Allergies:</span>
@@ -1084,7 +1132,6 @@ For each item return:
               </div>
             ` : ''}
 
-            <!-- Prep Items Checklist -->
             <div class="divide-y divide-slate-100">
               ${items.map(item => `
                 <div onclick="toggleItem('${ev.id}', '${item.id}')" class="touch-target flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-slate-50 active:bg-slate-100 select-none transition">
@@ -1268,10 +1315,12 @@ For each item return:
     }
 
     // ==========================================
-    // 7. SETTINGS & DIALOG HELPERS
+    // 7. SETTINGS, API KEY TEST & DIALOG HELPERS
     // ==========================================
     function openSettingsModal() {
       document.getElementById('apiKeyInput').value = localStorage.getItem(STORAGE_KEY_API) || '';
+      const statusEl = document.getElementById('apiTestStatus');
+      statusEl.classList.add('hidden');
       document.getElementById('settingsModal').classList.remove('hidden');
     }
 
@@ -1282,7 +1331,41 @@ For each item return:
     function saveApiKey() {
       const val = document.getElementById('apiKeyInput').value.trim();
       localStorage.setItem(STORAGE_KEY_API, val);
+      updateApiIndicator();
       closeSettingsModal();
+    }
+
+    async function testApiKey() {
+      const key = document.getElementById('apiKeyInput').value.trim();
+      const statusEl = document.getElementById('apiTestStatus');
+      const btn = document.getElementById('testApiBtn');
+
+      if (!key) {
+        statusEl.textContent = 'Please paste an API key first.';
+        statusEl.className = 'text-xs font-bold mt-2 px-3 py-2 rounded-xl bg-rose-50 text-rose-700';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Testing...';
+      statusEl.textContent = 'Connecting to Google Gemini...';
+      statusEl.className = 'text-xs font-bold mt-2 px-3 py-2 rounded-xl bg-slate-100 text-slate-700';
+
+      try {
+        await callGeminiWithFallback(key, {
+          contents: [{ role: 'user', parts: [{ text: 'Reply with OK' }] }]
+        });
+        localStorage.setItem(STORAGE_KEY_API, key);
+        updateApiIndicator();
+        statusEl.textContent = '✓ Connected! Your API key is working and saved.';
+        statusEl.className = 'text-xs font-bold mt-2 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-800';
+      } catch (err) {
+        statusEl.textContent = `✕ Failed: ${err.message}`;
+        statusEl.className = 'text-xs font-bold mt-2 px-3 py-2 rounded-xl bg-rose-50 text-rose-700';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test Key';
+      }
     }
 
     function showDialog(title, message, buttons = []) {
