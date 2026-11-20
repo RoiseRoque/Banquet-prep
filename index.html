@@ -1,17 +1,230 @@
-<!-- ... existing code ... -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Banquet Prep — Daily Kitchen Prep List</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+
+    .touch-target {
+      min-height: 48px;
+      min-width: 48px;
+    }
+
+    /* Ultra-clean, ink-efficient clipboard print layout (no boxes or divider lines) */
+    @media print {
+      body {
+        background: #ffffff !important;
+        color: #000000 !important;
+        font-size: 10pt;
+        line-height: 1.3;
+        padding: 0 !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .print-only {
+        display: block !important;
+      }
+      .print-section {
+        margin-bottom: 10px !important;
+        break-inside: avoid;
+      }
+      .print-box {
+        display: inline-block !important;
+        width: 13px !important;
+        height: 13px !important;
+        border: 1.4px solid #000000 !important;
+        margin-right: 8px !important;
+        vertical-align: -1px;
+        background: #ffffff !important;
+      }
+      .print-clean-text {
+        text-decoration: none !important;
+        opacity: 1 !important;
+      }
+      @page {
+        margin: 0.35in;
+      }
+    }
+  </style>
+</head>
+<body class="antialiased pb-20">
+
+  <!-- PRINT-ONLY HEADER & COMBINED CLIPBOARD SHEET -->
+  <div id="printContainer" class="hidden print-only"></div>
+
+  <!-- SIMPLE STICKY HEADER -->
+  <header class="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-sm no-print">
+    <div class="max-w-4xl mx-auto px-3 sm:px-6 py-3">
+      <div class="flex items-center justify-between gap-2">
+        <!-- App Title & Date -->
+        <div>
+          <h1 class="text-xl sm:text-2xl font-black tracking-tight text-slate-900 leading-none">Banquet Prep</h1>
+          <p class="text-xs sm:text-sm text-slate-500 font-semibold mt-1" id="currentDateDisplay"></p>
+        </div>
+
+        <!-- Primary Actions: Scan BEO, Print List, API Key Gear -->
+        <div class="flex items-center gap-2">
+          <input type="file" id="beoFileInput" accept="image/*" multiple class="hidden" />
+
+          <button onclick="triggerScanUpload()" class="touch-target inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-extrabold text-sm shadow-sm transition">
+            <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span>Scan BEOs</span>
+          </button>
+
+          <button onclick="printPrepList()" class="touch-target inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white border-2 border-slate-200 hover:bg-slate-50 active:scale-[0.98] text-slate-800 font-extrabold text-sm transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            <span class="hidden sm:inline">Print List</span>
+          </button>
+
+          <button onclick="openSettingsModal()" id="settingsBtn" title="API Key Settings" class="relative touch-target w-11 h-11 rounded-xl border-2 border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-600 transition">
+            <span id="apiStatusDot" class="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 3 MASSIVE COLOR-CODED DEPARTMENT TABS -->
+      <nav class="grid grid-cols-3 gap-2 mt-3" aria-label="Kitchen Stations">
+        <button onclick="setActiveTab('hotBanquet')" id="tab-hotBanquet" class="touch-target flex flex-col sm:flex-row items-center justify-center sm:justify-between px-3 py-2.5 rounded-xl font-black text-sm border-2 transition">
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded-full bg-rose-600 shrink-0"></span>
+            <span>Hot Banquet</span>
+          </span>
+          <span id="badge-hotBanquet" class="mt-1 sm:mt-0 px-2 py-0.5 rounded-md text-xs font-black bg-rose-100 text-rose-800">0</span>
+        </button>
+
+        <button onclick="setActiveTab('gardeMange')" id="tab-gardeMange" class="touch-target flex flex-col sm:flex-row items-center justify-center sm:justify-between px-3 py-2.5 rounded-xl font-black text-sm border-2 transition">
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded-full bg-emerald-600 shrink-0"></span>
+            <span>Garde Mange</span>
+          </span>
+          <span id="badge-gardeMange" class="mt-1 sm:mt-0 px-2 py-0.5 rounded-md text-xs font-black bg-emerald-100 text-emerald-800">0</span>
+        </button>
+
+        <button onclick="setActiveTab('pastry')" id="tab-pastry" class="touch-target flex flex-col sm:flex-row items-center justify-center sm:justify-between px-3 py-2.5 rounded-xl font-black text-sm border-2 transition">
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded-full bg-blue-600 shrink-0"></span>
+            <span>Pastry</span>
+          </span>
+          <span id="badge-pastry" class="mt-1 sm:mt-0 px-2 py-0.5 rounded-md text-xs font-black bg-blue-100 text-blue-800">0</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- MAIN PREP WORKSPACE -->
+  <main class="max-w-4xl mx-auto px-3 sm:px-6 pt-4 no-print">
+
+    <!-- VIEW TOGGLE & DAY CONTROLS (Visible when events exist) -->
+    <div id="controlsBar" class="hidden mb-4 flex items-center justify-between gap-2">
+      <!-- 2-Button View Pill -->
+      <div class="inline-flex bg-slate-200/80 p-1 rounded-xl">
+        <button onclick="setSubView('byEvent')" id="viewBtn-byEvent" class="px-4 py-2 rounded-lg text-sm font-extrabold transition">
+          By Event
+        </button>
+        <button onclick="setSubView('totalPrep')" id="viewBtn-totalPrep" class="px-4 py-2 rounded-lg text-sm font-extrabold transition">
+          Total Prep
+        </button>
+      </div>
+
+      <!-- Simple Utility Actions -->
+      <div class="flex items-center gap-2">
+        <button onclick="openManualEventModal()" class="touch-target px-3.5 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 font-extrabold text-xs sm:text-sm transition">
+          + Add Event
+        </button>
+        <button onclick="confirmClearDay()" class="touch-target px-3.5 py-2 rounded-xl bg-white border border-slate-300 hover:border-rose-300 hover:text-rose-700 text-slate-600 font-extrabold text-xs sm:text-sm transition">
+          Clear Day
+        </button>
+      </div>
+    </div>
+
+    <!-- CLEAN EMPTY STATE -->
+    <div id="emptyState" class="bg-white rounded-3xl border-2 border-dashed border-slate-300 p-8 text-center max-w-lg mx-auto mt-6">
+      <h2 class="text-xl font-black text-slate-900">Ready for Today’s Prep</h2>
+      <p class="text-sm text-slate-600 mt-1.5">
+        Select multiple BEO photos at once (or snap them one by one) to build a single daily prep list for Hot Banquet, Garde Mange, and Pastry.
+      </p>
+
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-3 mt-6">
+        <button onclick="triggerScanUpload()" class="touch-target w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm shadow-sm transition">
+          Scan / Upload BEOs
+        </button>
+        <button onclick="loadSampleBEOs()" class="touch-target w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-sm transition">
+          Load Sample BEOs
+        </button>
+      </div>
+    </div>
+
+    <!-- PREP CHECKLIST OUTPUT -->
+    <div id="prepListContainer" class="space-y-4"></div>
+
+  </main>
+
+  <!-- SCANNING OVERLAY -->
+  <div id="scanningModal" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl">
+      <div class="w-12 h-12 rounded-2xl bg-slate-900 text-amber-400 flex items-center justify-center mx-auto mb-3 animate-pulse">
+        <svg class="w-7 h-7 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </div>
+      <h3 class="text-lg font-black text-slate-900">Reading BEO...</h3>
+      <p class="text-xs text-slate-600 mt-1" id="scanningStatus">Extracting event details & sorting menu items...</p>
+    </div>
+  </div>
+
+  <!-- QUICK REVIEW & STATION OVERRIDE MODAL -->
+  <div id="reviewModal" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm overflow-y-auto p-2 sm:p-4 no-print">
+    <div class="bg-white rounded-3xl max-w-2xl w-full mx-auto my-2 sm:my-6 shadow-2xl overflow-hidden border border-slate-200">
+      <div class="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between">
+        <h3 class="text-base sm:text-lg font-black" id="reviewModalTitle">Verify Prep Details</h3>
+        <button onclick="closeReviewModal()" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300">✕</button>
+      </div>
+
+      <div class="p-4 sm:p-5 space-y-4 max-h-[76vh] overflow-y-auto">
+        <!-- Essential Event Info Only -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+          <div class="sm:col-span-2">
+            <label class="block text-[11px] font-extrabold uppercase text-slate-500 mb-1">Service Style</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" id="styleBtn-Plated" onclick="setDraftServiceStyle('Plated')" class="py-2 px-3 rounded-xl font-black text-xs sm:text-sm border-2 transition">
+                PLATED (Exact Portions)
+              </button>
+              <button type="button" id="styleBtn-Buffet" onclick="setDraftServiceStyle('Buffet')" class="py-2 px-3 rounded-xl font-black text-xs sm:text-sm border-2 transition">
+                BUFFET (Based on Pax)
+              </button>
+            </div>
+          </div>
           <div class="sm:col-span-2">
             <label class="block text-[11px] font-extrabold uppercase text-slate-500 mb-1">Event Name</label>
             <input type="text" id="editEventName" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 text-sm" placeholder="e.g. Smith Wedding" />
           </div>
           <div>
-            <label class="block text-[11px] font-extrabold uppercase text-slate-500 mb-1">BEO Event Date</label>
-            <input type="text" id="editEventDate" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 text-sm" placeholder="e.g. Sat, Nov 21, 2026" />
-          </div>
-          <div>
             <label class="block text-[11px] font-extrabold uppercase text-slate-500 mb-1">Location (Room)</label>
             <input type="text" id="editLocation" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 text-sm" placeholder="e.g. Grand Ballroom" />
           </div>
-          <div class="sm:col-span-2 grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-2 gap-2">
             <div>
               <label class="block text-[11px] font-extrabold uppercase text-slate-500 mb-1">Time</label>
               <input type="text" id="editServiceTime" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 text-sm" placeholder="18:30" />
@@ -22,99 +235,499 @@
             </div>
           </div>
           <div class="sm:col-span-2">
-<!-- ... existing code ... -->
+            <label class="block text-[11px] font-extrabold uppercase text-rose-600 mb-1">Allergies / Dietary Notes</label>
+            <input type="text" id="editAllergies" class="w-full px-3 py-2 rounded-xl border border-rose-200 bg-rose-50/40 font-bold text-rose-900 text-sm" placeholder="e.g. 4 Vegan, 2 Nut Allergy" />
+          </div>
+        </div>
+
+        <!-- Menu Items & 1-Click Station Assignment -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-black uppercase text-slate-700">Prep Items (Tap station to reassign)</span>
+            <button onclick="addBlankItemToReview()" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs">+ Add Item</button>
+          </div>
+          <div id="reviewItemsList" class="space-y-2.5"></div>
+        </div>
+      </div>
+
+      <div class="bg-slate-50 px-5 py-3.5 border-t border-slate-200 flex items-center justify-between gap-2">
+        <button id="deleteEventBtn" onclick="deleteCurrentEditingEvent()" class="hidden touch-target px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-xs sm:text-sm">Delete Event</button>
+        <div class="flex items-center gap-2 ml-auto">
+          <button onclick="skipOrCloseReviewModal()" id="cancelReviewBtn" class="touch-target px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 font-extrabold text-sm">Cancel</button>
+          <button onclick="saveReviewedEvent()" id="saveReviewBtn" class="touch-target px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm">Save to Prep List</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GEMINI API KEY SETTINGS MODAL -->
+  <div id="settingsModal" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+      <h3 class="text-lg font-black text-slate-900">BEO Scanner API Key</h3>
+      <p class="text-xs text-slate-600 mt-1">
+        Paste your free Google Gemini API key (from <span class="font-bold">aistudio.google.com</span>) to enable live BEO photo scanning. Saved locally on this device.
+      </p>
+      <input type="text" id="apiKeyInput" placeholder="AIzaSy..." class="w-full mt-4 px-3.5 py-2.5 rounded-xl border-2 border-slate-200 focus:border-slate-900 outline-none font-mono text-sm" />
+      <p id="apiTestStatus" class="hidden text-xs font-bold mt-2 px-3 py-2 rounded-xl"></p>
+
+      <!-- Magic Crew Setup Link Section -->
+      <div class="mt-4 pt-3.5 border-t border-slate-200">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <p class="text-xs font-black text-slate-800">Crew Zero-Setup Link</p>
+            <p class="text-[11px] text-slate-500">Auto-connects any phone without exposing your key on GitHub.</p>
+          </div>
+          <button type="button" onclick="copyCrewSetupLink()" id="copyCrewLinkBtn" class="px-3 py-2 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 font-extrabold text-xs shrink-0 transition">
+            Copy Crew Link
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-2 mt-5">
+        <button onclick="testApiKey()" id="testApiBtn" class="touch-target px-3.5 py-2 rounded-xl border-2 border-slate-200 hover:bg-slate-50 text-slate-800 font-extrabold text-xs sm:text-sm">Test Key</button>
+        <div class="flex items-center gap-2">
+          <button onclick="closeSettingsModal()" class="touch-target px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-extrabold text-sm">Cancel</button>
+          <button onclick="saveApiKey()" class="touch-target px-5 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-sm">Save Key</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CUSTOM CONFIRMATION DIALOG -->
+  <div id="dialogModal" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+      <h3 class="text-lg font-black text-slate-900" id="dialogTitle">Notice</h3>
+      <p class="text-sm text-slate-600 mt-1.5 whitespace-pre-line" id="dialogMessage"></p>
+      <div class="flex items-center justify-end gap-2 mt-5" id="dialogButtons"></div>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. STATE & LOCALSTORAGE PERSISTENCE
+    // ==========================================
+    const STORAGE_KEY_EVENTS = 'banquet_prep_events_v2';
+    const STORAGE_KEY_OVERRIDES = 'banquet_prep_station_overrides_v2';
+    const STORAGE_KEY_API = 'banquet_prep_gemini_key';
+
+    const DEPARTMENTS = {
+      hotBanquet: {
+        id: 'hotBanquet',
+        label: 'Hot Banquet',
+        bg: 'bg-rose-600',
+        badge: 'bg-rose-100 text-rose-800',
+        tabActive: 'border-rose-600 bg-rose-50 text-rose-950 shadow-sm'
+      },
+      gardeMange: {
+        id: 'gardeMange',
+        label: 'Garde Mange',
+        bg: 'bg-emerald-600',
+        badge: 'bg-emerald-100 text-emerald-800',
+        tabActive: 'border-emerald-600 bg-emerald-50 text-emerald-950 shadow-sm'
+      },
+      pastry: {
+        id: 'pastry',
+        label: 'Pastry',
+        bg: 'bg-blue-600',
+        badge: 'bg-blue-100 text-blue-800',
+        tabActive: 'border-blue-600 bg-blue-50 text-blue-950 shadow-sm'
+      }
+    };
+
+    let state = {
+      events: loadFromStorage(STORAGE_KEY_EVENTS, []),
+      stationOverrides: loadFromStorage(STORAGE_KEY_OVERRIDES, {}),
+      activeTab: 'hotBanquet',
+      subView: 'byEvent',
+      reviewQueue: [],
+      reviewQueueTotal: 0,
+      reviewDraft: null,
+      editingEventId: null
+    };
+
+    function loadFromStorage(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(state.events));
+        localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(state.stationOverrides));
+      } catch (e) {}
+    }
+
+    function updateApiIndicator() {
+      const hasKey = Boolean((localStorage.getItem(STORAGE_KEY_API) || '').trim());
+      const dot = document.getElementById('apiStatusDot');
+      if (dot) {
+        dot.className = `absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full ${hasKey ? 'bg-emerald-500' : 'bg-rose-500'}`;
+      }
+    }
+
+    const todayLabel = new Date().toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+    document.getElementById('currentDateDisplay').textContent = todayLabel;
+
+    // Auto-import API key from Magic Crew Setup Link (#key=...) and scrub URL
+    (function importApiKeyFromHash() {
+      try {
+        const hash = window.location.hash || '';
+        const match = hash.match(/[#&]key=([^&]+)/);
+        if (match && match[1]) {
+          const decodedKey = decodeURIComponent(match[1]).trim();
+          if (decodedKey) {
+            localStorage.setItem(STORAGE_KEY_API, decodedKey);
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
+        }
+      } catch (e) {}
+    })();
+
+    updateApiIndicator();
+
+    // ==========================================
+    // 2. BEO PHOTO SCANNER (GEMINI VISION)
+    // ==========================================
+    function triggerScanUpload() {
+      const savedKey = (localStorage.getItem(STORAGE_KEY_API) || '').trim();
+      if (!savedKey) {
+        showDialog(
+          'Scanner API Key Not Set',
+          'Before scanning BEO photos, tap "Add API Key" and paste your Google Gemini API key.',
+          [
+            { label: 'Add API Key', primary: true, onClick: () => openSettingsModal() },
+            { label: 'Cancel', primary: false }
+          ]
+        );
+        return;
+      }
+      const input = document.getElementById('beoFileInput');
+      input.value = '';
+      input.click();
+    }
+
+    document.getElementById('beoFileInput').addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+
+      const modal = document.getElementById('scanningModal');
+      const statusEl = document.getElementById('scanningStatus');
+      modal.classList.remove('hidden');
+
+      try {
+        statusEl.textContent = `Preparing ${files.length} BEO photo${files.length > 1 ? 's' : ''}...`;
+        const imageParts = await Promise.all(files.map(file => compressImageToPart(file)));
+
+        statusEl.textContent = `Reading ${files.length} photo${files.length > 1 ? 's' : ''}...`;
+        const extractedEvents = await scanBEOImages(imageParts);
+
+        extractedEvents.forEach(ev => {
+          ev.items.forEach(item => {
+            const learnedDept = state.stationOverrides[item.name.trim().toLowerCase()];
+            if (learnedDept && DEPARTMENTS[learnedDept]) {
+              item.department = learnedDept;
+            }
+          });
+        });
+
+        modal.classList.add('hidden');
+        startReviewQueue(extractedEvents);
+      } catch (err) {
+        modal.classList.add('hidden');
+        const detail = err.message || 'Unknown error';
+        const isKeyIssue = detail.includes('API_KEY') || detail.includes('API key') || detail.includes('400') || detail.includes('403');
+        showDialog(
+          isKeyIssue ? 'API Key Rejected by Google' : 'Could Not Read BEO Photos',
+          `Reason: ${detail}\n\nTips: Check your API key in the Gear settings, or scan 2–4 clear photos at a time.`,
+          [
+            { label: 'Check API Key', primary: true, onClick: () => openSettingsModal() },
+            { label: 'Enter Manually', primary: false, onClick: () => openManualEventModal() },
+            { label: 'Close', primary: false }
+          ]
+        );
+      }
+    });
+
+    function compressImageToPart(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const maxDim = 1400;
+            let w = img.width;
+            let h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+              else { w = Math.round((w * maxDim) / h); h = maxDim; }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            const base64 = canvas.toDataURL('image/jpeg', 0.78).split(',')[1];
+            resolve({ inlineData: { mimeType: 'image/jpeg', data: base64 } });
+          };
+          img.onerror = () => reject(new Error('Could not decode image file.'));
+          img.src = reader.result;
+        };
+        reader.onerror = () => reject(new Error('Could not read photo from device.'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function callGeminiWithFallback(apiKey, payload) {
+      const models = ['gemini-2.5-flash', 'gemini-3-flash-preview'];
+      let lastError = 'API_ERROR';
+
+      for (const model of models) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          return await res.json();
+        }
+
+        let errMsg = `HTTP ${res.status}`;
+        try {
+          const errBody = await res.json();
+          if (errBody?.error?.message) errMsg = errBody.error.message;
+        } catch (e) {}
+        lastError = `${model}: ${errMsg}`;
+
+        // Stop immediately on invalid API key or billing/quota errors
+        if (res.status === 400 || res.status === 403 || res.status === 429) {
+          throw new Error(errMsg);
+        }
+      }
+
+      // Dynamic fallback: query available models on this API key if hardcoded names change
+      try {
+        const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          const activeFlash = (listData.models || []).find(m =>
+            (m.supportedGenerationMethods || []).includes('generateContent') &&
+            m.name.includes('gemini') &&
+            m.name.includes('flash') &&
+            !m.name.includes('2.0')
+          );
+          if (activeFlash) {
+            const retryRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${activeFlash.name}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            if (retryRes.ok) {
+              return await retryRes.json();
+            }
+          }
+        }
+      } catch (e) {}
+
+      throw new Error(lastError);
+    }
+
+    async function scanBEOImages(imageParts) {
+      const apiKey = (localStorage.getItem(STORAGE_KEY_API) || '').trim();
+      if (!apiKey) {
+        throw new Error('MISSING_API_KEY');
+      }
+
+      const systemPrompt = `You are a Banquet Chef creating a single daily kitchen prep list from Banquet Event Order (BEO) photos.
+The uploaded photos may contain MULTIPLE DIFFERENT EVENTS or multiple pages of the same event.
+Group pages that belong to the SAME event together, and output a SEPARATE event object in the "events" array for each distinct function/event.
+Extract ONLY essential prep information (ignore room setup, AV, linen, billing, and equipment clutter).
+
 For EACH distinct event extract:
-1. eventDate: The event/function date printed on the BEO (formatted clearly, e.g., "Sat, Nov 21, 2026").
-2. eventName: Function/client name.
-3. serviceStyle: "Plated" or "Buffet" (detect whether the meal is individually plated or a buffet/food station).
-4. location: Room or ballroom name.
-5. serviceTime: Food service time (e.g., "12:30 PM" or "18:30").
-6. guestCount: Guaranteed guest count (Pax).
-7. allergiesAndNotes: Array of critical dietary allergies or special meal alerts (e.g., ["4 Vegan", "2 Nut Allergy"]).
-8. items: Every culinary food item sorted into:
+1. eventName: Function/client name.
+2. serviceStyle: "Plated" or "Buffet" (detect whether the meal is individually plated or a buffet/food station).
+3. location: Room or ballroom name.
+4. serviceTime: Food service time (e.g., "12:30 PM" or "18:30").
+5. guestCount: Guaranteed guest count (Pax).
+6. allergiesAndNotes: Array of critical dietary allergies or special meal alerts (e.g., ["4 Vegan", "2 Nut Allergy"]).
+7. items: Every culinary food item sorted into:
    - "hotBanquet": Hot proteins, hot starches, hot vegetables, savory sauces/gravies, soups, hot hors d'oeuvres.
    - "gardeMange": Cold appetizers, salads, dressings, charcuterie/cheese, cold platters, crudités, garnishes.
    - "pastry": Plated desserts, cakes, petit fours, breads/rolls, breakfast pastries, dessert sauces.
 
 Quantity rules by serviceStyle:
-<!-- ... existing code ... -->
-            items: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: {
-                  eventDate: { type: "STRING" },
-                  eventName: { type: "STRING" },
-                  serviceStyle: { type: "STRING", enum: ["Plated", "Buffet"] },
-                  location: { type: "STRING" },
-                  serviceTime: { type: "STRING" },
-                  guestCount: { type: "NUMBER" },
-                  allergiesAndNotes: { type: "ARRAY", items: { type: "STRING" } },
-                  items: {
-                    type: "ARRAY",
+- If serviceStyle is "Plated": extract exact portion quantity and unit for each dish (e.g., quantity: 140, unit: "portions").
+- If serviceStyle is "Buffet": set quantity to 0 and unit to "" because buffet volume is decided by the chef from the guaranteed guestCount (Pax).
+
+For each item return:
+- department: "hotBanquet" | "gardeMange" | "pastry"
+- name: Clean dish name (standardized capitalization so identical items across events match).
+- quantity: Number (exact portions for Plated; 0 for Buffet).
+- unit: Unit string (e.g., "portions", "doz" for Plated; "" for Buffet).
+- notes: Concise prep/garnish spec only (e.g., "Red wine demi" or "Carving station, au jus").`;
+
+      const payload = {
+        contents: [{
+          role: "user",
+          parts: [
+            { text: "Read these Banquet Event Order (BEO) photos and extract all distinct events and their food prep items." },
+            ...imageParts
+          ]
+        }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: {
+          temperature: 0,
+          thinkingConfig: { thinkingBudget: 0 },
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              events: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    eventName: { type: "STRING" },
+                    serviceStyle: { type: "STRING", enum: ["Plated", "Buffet"] },
+                    location: { type: "STRING" },
+                    serviceTime: { type: "STRING" },
+                    guestCount: { type: "NUMBER" },
+                    allergiesAndNotes: { type: "ARRAY", items: { type: "STRING" } },
                     items: {
-                      type: "OBJECT",
-                      properties: {
-                        department: { type: "STRING", enum: ["hotBanquet", "gardeMange", "pastry"] },
-                        name: { type: "STRING" },
-                        quantity: { type: "NUMBER" },
-                        unit: { type: "STRING" },
-                        notes: { type: "STRING" }
-                      },
-                      required: ["department", "name", "quantity", "unit", "notes"]
+                      type: "ARRAY",
+                      items: {
+                        type: "OBJECT",
+                        properties: {
+                          department: { type: "STRING", enum: ["hotBanquet", "gardeMange", "pastry"] },
+                          name: { type: "STRING" },
+                          quantity: { type: "NUMBER" },
+                          unit: { type: "STRING" },
+                          notes: { type: "STRING" }
+                        },
+                        required: ["department", "name", "quantity", "unit", "notes"]
+                      }
                     }
-                  }
-                },
-                required: ["eventDate", "eventName", "serviceStyle", "location", "serviceTime", "guestCount", "allergiesAndNotes", "items"]
+                  },
+                  required: ["eventName", "serviceStyle", "location", "serviceTime", "guestCount", "allergiesAndNotes", "items"]
+                }
               }
-            }
-          },
-<!-- ... existing code ... -->
+            },
+            required: ["events"]
+          }
+        }
+      };
+
+      const data = await callGeminiWithFallback(apiKey, payload);
+      const candidate = data?.candidates?.[0];
+      const text = candidate?.content?.parts?.[0]?.text;
+      if (!text) {
+        const blockReason = candidate?.finishReason || 'No text returned';
+        throw new Error(`Scanner could not extract text (${blockReason}).`);
+      }
+
+      const cleanedJson = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+      const parsed = JSON.parse(cleanedJson);
+      const rawEvents = Array.isArray(parsed.events) && parsed.events.length ? parsed.events : [parsed];
+
       return rawEvents.map((ev, eIdx) => {
         const isBuffet = ev.serviceStyle === 'Buffet';
         return {
           id: 'ev_' + Date.now() + '_' + eIdx + '_' + Math.random().toString(36).slice(2, 5),
-          eventDate: (ev.eventDate || '').trim() || todayLabel,
           eventName: ev.eventName || `Banquet Event ${eIdx + 1}`,
           serviceStyle: isBuffet ? 'Buffet' : 'Plated',
           location: ev.location || 'Main Ballroom',
           serviceTime: ev.serviceTime || '18:00',
           guestCount: Number(ev.guestCount) || 50,
-<!-- ... existing code ... -->
+          allergiesAndNotes: Array.isArray(ev.allergiesAndNotes) ? ev.allergiesAndNotes : [],
+          items: (ev.items || []).map((item, idx) => ({
+            id: 'it_' + Date.now() + '_' + eIdx + '_' + idx,
+            department: DEPARTMENTS[item.department] ? item.department : 'hotBanquet',
+            name: item.name || 'Prep Item',
+            quantity: isBuffet ? 0 : (Number(item.quantity) || Number(ev.guestCount) || 1),
+            unit: isBuffet ? '' : (item.unit || 'portions'),
+            notes: item.notes || '',
+            completed: false
+          }))
+        };
+      });
+    }
+
+    // ==========================================
+    // 3. SAMPLE DATA FOR INSTANT TESTING
+    // ==========================================
     function loadSampleBEOs() {
       state.events = [
         {
           id: 'sample_1',
-          eventDate: 'Sat, Nov 21, 2026',
           eventName: 'TechCorp Executive Lunch',
           serviceStyle: 'Plated',
           location: 'Pier 4 Room',
           serviceTime: '12:30 PM',
           guestCount: 65,
-<!-- ... existing code ... -->
+          allergiesAndNotes: ['3 Vegan', '2 Celiac / GF'],
+          items: [
+            { id: 'i1', department: 'gardeMange', name: 'Classic Caesar Salad', quantity: 65, unit: 'portions', notes: 'Croutons on side for GF', completed: false },
+            { id: 'i2', department: 'hotBanquet', name: 'Herb-Roasted Chicken Supreme', quantity: 55, unit: 'portions', notes: 'Thyme jus', completed: false },
+            { id: 'i3', department: 'hotBanquet', name: 'Roasted Cauliflower Steak', quantity: 10, unit: 'portions', notes: 'Vegan/GF — Romesco sauce', completed: false },
+            { id: 'i4', department: 'hotBanquet', name: 'Yukon Gold Potato Pavé', quantity: 65, unit: 'portions', notes: 'Rosemary garlic', completed: false },
+            { id: 'i5', department: 'pastry', name: 'Lemon Meringue Tartlet', quantity: 65, unit: 'portions', notes: 'Blueberry compote', completed: false }
+          ]
+        },
         {
           id: 'sample_buffet',
-          eventDate: 'Sat, Nov 21, 2026',
           eventName: 'Annual Corporate Summit Buffet',
           serviceStyle: 'Buffet',
           location: 'Grand Ballroom A & B',
           serviceTime: '1:00 PM',
           guestCount: 250,
-<!-- ... existing code ... -->
+          allergiesAndNotes: ['3 Gluten-Free (Plated separately)', '2 Vegan (Plated separately)'],
+          items: [
+            { id: 'ib1', department: 'gardeMange', name: 'Artisan Charcuterie & Local Cheese Display', quantity: 0, unit: '', notes: 'Pickled vegetables, fig jam, crostini', completed: false },
+            { id: 'ib2', department: 'gardeMange', name: 'Baby Kale & Roasted Squash Salad', quantity: 0, unit: '', notes: 'Maple cider vinaigrette, toasted pepitas', completed: false },
+            { id: 'ib3', department: 'hotBanquet', name: 'Slow-Roasted Prime Rib', quantity: 0, unit: '', notes: 'Carving station, rosemary au jus, horseradish', completed: false },
+            { id: 'ib4', department: 'hotBanquet', name: 'Lemon-Herb Grilled Chicken Breast', quantity: 0, unit: '', notes: 'Wild mushroom cream sauce', completed: false },
+            { id: 'ib5', department: 'hotBanquet', name: 'Garlic & Herb Roasted Baby Potatoes', quantity: 0, unit: '', notes: 'Chives & sea salt', completed: false },
+            { id: 'ib6', department: 'pastry', name: 'Assorted Mini Tartlets & French Macarons', quantity: 0, unit: '', notes: 'Buffet dessert platters', completed: false }
+          ]
+        },
         {
           id: 'sample_2',
-          eventDate: 'Sat, Nov 21, 2026',
           eventName: 'Smith-Jones Wedding Dinner',
           serviceStyle: 'Plated',
           location: 'Harbour Ballroom',
           serviceTime: '6:30 PM',
           guestCount: 180,
-<!-- ... existing code ... -->
+          allergiesAndNotes: ['4 Vegan', '2 Severe Nut Allergy (Table 12)'],
+          items: [
+            { id: 'i6', department: 'gardeMange', name: 'Classic Caesar Salad', quantity: 90, unit: 'portions', notes: 'Parmesan crisps', completed: false },
+            { id: 'i7', department: 'gardeMange', name: 'Burrata & Heirloom Tomato Salad', quantity: 90, unit: 'portions', notes: 'Basil oil, balsamic glaze', completed: false },
+            { id: 'i8', department: 'hotBanquet', name: 'Braised Beef Short Rib', quantity: 140, unit: 'portions', notes: 'Red wine demi-glace', completed: false },
+            { id: 'i9', department: 'hotBanquet', name: 'Pan-Seared Atlantic Salmon', quantity: 40, unit: 'portions', notes: 'Lemon dill beurre blanc', completed: false },
+            { id: 'i10', department: 'hotBanquet', name: 'Yukon Gold Potato Pavé', quantity: 180, unit: 'portions', notes: 'Hold 4 portions olive oil only (Vegan)', completed: false },
+            { id: 'i11', department: 'pastry', name: 'Dark Chocolate Torte', quantity: 180, unit: 'portions', notes: 'Raspberry coulis, gold leaf', completed: false },
+            { id: 'i12', department: 'pastry', name: 'Sourdough & Brioche Dinner Rolls', quantity: 18, unit: 'doz', notes: 'Whipped sea salt butter', completed: false }
+          ]
+        }
+      ];
+      saveState();
+      renderApp();
+    }
+
+    // ==========================================
+    // 4. REVIEW / EDIT MODAL
+    // ==========================================
     function openManualEventModal() {
-      const existingDate = state.events.find(e => e.eventDate)?.eventDate || todayLabel;
       const blank = {
         id: 'ev_' + Date.now(),
-        eventDate: existingDate,
         eventName: '',
         serviceStyle: 'Plated',
         location: '',
@@ -133,46 +746,741 @@ Quantity rules by serviceStyle:
       };
       openReviewModal(blank, null);
     }
-<!-- ... existing code ... -->
+
+    function editEvent(eventId) {
+      const found = state.events.find(e => e.id === eventId);
+      if (!found) return;
+      const copy = JSON.parse(JSON.stringify(found));
+      if (!copy.serviceStyle) copy.serviceStyle = 'Plated';
+      openReviewModal(copy, eventId);
+    }
+
+    function openReviewModal(draft, editingId) {
+      state.reviewDraft = draft;
+      state.editingEventId = editingId;
+      if (!state.reviewDraft.serviceStyle) state.reviewDraft.serviceStyle = 'Plated';
+
+      const inQueue = state.reviewQueue.length > 0;
+      const currentIdx = state.reviewQueueTotal - state.reviewQueue.length + 1;
+
+      document.getElementById('reviewModalTitle').textContent = editingId
+        ? 'Edit Event Prep'
+        : inQueue
+          ? `Verify Event ${currentIdx} of ${state.reviewQueueTotal}`
+          : 'Verify Scanned BEO';
+
+      document.getElementById('cancelReviewBtn').textContent = inQueue ? 'Skip Event' : 'Cancel';
       document.getElementById('saveReviewBtn').textContent = state.reviewQueue.length > 1
         ? 'Save & Next Event →'
         : 'Save to Prep List';
 
-      document.getElementById('editEventDate').value = draft.eventDate || todayLabel;
       document.getElementById('editEventName').value = draft.eventName || '';
       document.getElementById('editLocation').value = draft.location || '';
       document.getElementById('editServiceTime').value = draft.serviceTime || '';
       document.getElementById('editGuestCount').value = draft.guestCount || '';
       document.getElementById('editAllergies').value = (draft.allergiesAndNotes || []).join(', ');
-<!-- ... existing code ... -->
+
+      const delBtn = document.getElementById('deleteEventBtn');
+      delBtn.classList.toggle('hidden', !editingId);
+
+      updateServiceStyleButtons();
+      renderReviewItems();
+      document.getElementById('reviewModal').classList.remove('hidden');
+    }
+
+    function startReviewQueue(eventsList) {
+      if (!eventsList || !eventsList.length) return;
+      state.reviewQueue = [...eventsList];
+      state.reviewQueueTotal = eventsList.length;
+      openReviewModal(state.reviewQueue[0], null);
+    }
+
+    function advanceOrCloseReviewQueue() {
+      if (state.reviewQueue.length > 0) {
+        state.reviewQueue.shift();
+      }
+      if (state.reviewQueue.length > 0) {
+        openReviewModal(state.reviewQueue[0], null);
+      } else {
+        state.reviewQueueTotal = 0;
+        closeReviewModal();
+        renderApp();
+      }
+    }
+
+    function skipOrCloseReviewModal() {
+      if (state.reviewQueue.length > 0) {
+        advanceOrCloseReviewQueue();
+      } else {
+        closeReviewModal();
+      }
+    }
+
+    function setDraftServiceStyle(style) {
+      if (!state.reviewDraft) return;
+      state.reviewDraft.serviceStyle = style;
+      if (style === 'Plated') {
+        const defaultPax = Number(document.getElementById('editGuestCount').value) || 50;
+        state.reviewDraft.items.forEach(item => {
+          if (!item.quantity) item.quantity = defaultPax;
+          if (!item.unit) item.unit = 'portions';
+        });
+      }
+      updateServiceStyleButtons();
+      renderReviewItems();
+    }
+
+    function updateServiceStyleButtons() {
+      const style = state.reviewDraft?.serviceStyle || 'Plated';
+      const platedBtn = document.getElementById('styleBtn-Plated');
+      const buffetBtn = document.getElementById('styleBtn-Buffet');
+
+      platedBtn.className = `py-2 px-3 rounded-xl font-black text-xs sm:text-sm border-2 transition ${
+        style === 'Plated'
+          ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
+      }`;
+      buffetBtn.className = `py-2 px-3 rounded-xl font-black text-xs sm:text-sm border-2 transition ${
+        style === 'Buffet'
+          ? 'border-amber-600 bg-amber-600 text-white shadow-sm'
+          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
+      }`;
+    }
+
+    function closeReviewModal() {
+      document.getElementById('reviewModal').classList.add('hidden');
+      state.reviewDraft = null;
+      state.editingEventId = null;
+      state.reviewQueue = [];
+      state.reviewQueueTotal = 0;
+    }
+
+    function renderReviewItems() {
+      const list = document.getElementById('reviewItemsList');
+      const items = state.reviewDraft?.items || [];
+      const isBuffet = state.reviewDraft?.serviceStyle === 'Buffet';
+
+      if (!items.length) {
+        list.innerHTML = `<p class="text-xs text-slate-500 text-center py-4 bg-slate-50 rounded-xl">No items yet. Tap "+ Add Item".</p>`;
+        return;
+      }
+
+      list.innerHTML = items.map((item, idx) => `
+        <div class="p-3 rounded-xl border border-slate-200 bg-white space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1">
+              <button type="button" onclick="setDraftDept(${idx}, 'hotBanquet')" class="px-2.5 py-1 rounded-lg text-xs font-extrabold ${item.department === 'hotBanquet' ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-600'}">Hot</button>
+              <button type="button" onclick="setDraftDept(${idx}, 'gardeMange')" class="px-2.5 py-1 rounded-lg text-xs font-extrabold ${item.department === 'gardeMange' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}">Garde Mange</button>
+              <button type="button" onclick="setDraftDept(${idx}, 'pastry')" class="px-2.5 py-1 rounded-lg text-xs font-extrabold ${item.department === 'pastry' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}">Pastry</button>
+            </div>
+            <button type="button" onclick="removeDraftItem(${idx})" class="text-slate-400 hover:text-rose-600 px-1.5 font-bold text-sm">✕</button>
+          </div>
+
+          <div class="grid grid-cols-12 gap-2">
+            <input type="text" value="${escapeHtml(item.name)}" onchange="updateDraftField(${idx}, 'name', this.value)" placeholder="Item name" class="${isBuffet ? 'col-span-12 sm:col-span-8' : 'col-span-12 sm:col-span-6'} px-2.5 py-1.5 rounded-lg border border-slate-300 text-sm font-bold text-slate-900" />
+            ${isBuffet ? `
+              <div class="col-span-12 sm:col-span-4 px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-xs font-black text-amber-900 flex items-center justify-center">
+                Based on Pax
+              </div>
+            ` : `
+              <input type="number" value="${item.quantity || ''}" onchange="updateDraftField(${idx}, 'quantity', Number(this.value))" placeholder="Qty" class="col-span-5 sm:col-span-2 px-2.5 py-1.5 rounded-lg border border-slate-300 text-sm font-extrabold text-slate-900" />
+              <input type="text" value="${escapeHtml(item.unit || 'portions')}" onchange="updateDraftField(${idx}, 'unit', this.value)" placeholder="Unit" class="col-span-7 sm:col-span-4 px-2.5 py-1.5 rounded-lg border border-slate-300 text-sm font-semibold text-slate-700" />
+            `}
+            <input type="text" value="${escapeHtml(item.notes)}" onchange="updateDraftField(${idx}, 'notes', this.value)" placeholder="Prep spec / garnish note" class="col-span-12 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700" />
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function setDraftDept(idx, dept) {
+      if (!state.reviewDraft) return;
+      const item = state.reviewDraft.items[idx];
+      item.department = dept;
+      if (item.name.trim()) {
+        state.stationOverrides[item.name.trim().toLowerCase()] = dept;
+      }
+      renderReviewItems();
+    }
+
+    function updateDraftField(idx, field, val) {
+      if (!state.reviewDraft) return;
+      state.reviewDraft.items[idx][field] = val;
+    }
+
+    function removeDraftItem(idx) {
+      if (!state.reviewDraft) return;
+      state.reviewDraft.items.splice(idx, 1);
+      renderReviewItems();
+    }
+
+    function addBlankItemToReview() {
+      if (!state.reviewDraft) return;
+      const isBuffet = state.reviewDraft.serviceStyle === 'Buffet';
+      state.reviewDraft.items.push({
+        id: 'it_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+        department: state.activeTab,
+        name: '',
+        quantity: isBuffet ? 0 : (Number(document.getElementById('editGuestCount').value) || 50),
+        unit: isBuffet ? '' : 'portions',
+        notes: '',
+        completed: false
+      });
+      renderReviewItems();
+    }
+
+    function saveReviewedEvent() {
+      if (!state.reviewDraft) return;
+      const allergiesRaw = document.getElementById('editAllergies').value.trim();
+      const isBuffet = state.reviewDraft.serviceStyle === 'Buffet';
+
       const cleanedEvent = {
         ...state.reviewDraft,
         serviceStyle: isBuffet ? 'Buffet' : 'Plated',
-        eventDate: document.getElementById('editEventDate').value.trim() || todayLabel,
         eventName: document.getElementById('editEventName').value.trim() || 'Banquet Function',
         location: document.getElementById('editLocation').value.trim() || 'Main Ballroom',
         serviceTime: document.getElementById('editServiceTime').value.trim() || '18:00',
         guestCount: Number(document.getElementById('editGuestCount').value) || 0,
         allergiesAndNotes: allergiesRaw ? allergiesRaw.split(',').map(s => s.trim()).filter(Boolean) : [],
-<!-- ... existing code ... -->
-    // Build Ultra-Clean, Ink-Efficient Clipboard Print Sheet (Single BEO event date at top)
+        items: state.reviewDraft.items
+          .filter(i => i.name.trim().length > 0)
+          .map(i => ({
+            ...i,
+            quantity: isBuffet ? 0 : (Number(i.quantity) || 0),
+            unit: isBuffet ? '' : (i.unit || 'portions')
+          }))
+      };
+
+      cleanedEvent.items.forEach(item => {
+        state.stationOverrides[item.name.trim().toLowerCase()] = item.department;
+      });
+
+      if (state.editingEventId) {
+        const idx = state.events.findIndex(e => e.id === state.editingEventId);
+        if (idx >= 0) state.events[idx] = cleanedEvent;
+      } else {
+        state.events.push(cleanedEvent);
+      }
+
+      saveState();
+      if (state.reviewQueue.length > 0) {
+        advanceOrCloseReviewQueue();
+      } else {
+        closeReviewModal();
+        renderApp();
+      }
+    }
+
+    function deleteCurrentEditingEvent() {
+      if (!state.editingEventId) return;
+      state.events = state.events.filter(e => e.id !== state.editingEventId);
+      saveState();
+      closeReviewModal();
+      renderApp();
+    }
+
+    // ==========================================
+    // 5. CHECKLIST TOGGLES & AGGREGATION
+    // ==========================================
+    function toggleItem(eventId, itemId) {
+      const ev = state.events.find(e => e.id === eventId);
+      if (!ev) return;
+      const item = ev.items.find(i => i.id === itemId);
+      if (!item) return;
+      item.completed = !item.completed;
+      saveState();
+      renderApp();
+    }
+
+    function toggleAggregatedItem(normKey, deptId, mode = 'plated') {
+      const matching = [];
+      state.events.forEach(ev => {
+        const isBuffet = ev.serviceStyle === 'Buffet';
+        if (mode === 'plated' && isBuffet) return;
+        if (mode === 'buffet' && !isBuffet) return;
+        ev.items.forEach(item => {
+          if (item.department === deptId && makeNormKey(item.name, isBuffet ? 'buffet' : item.unit) === normKey) {
+            matching.push(item);
+          }
+        });
+      });
+      if (!matching.length) return;
+      const nextState = !matching.every(i => i.completed);
+      matching.forEach(i => { i.completed = nextState; });
+      saveState();
+      renderApp();
+    }
+
+    function makeNormKey(name, unit) {
+      return `${name.trim().toLowerCase()}__${(unit || 'portions').trim().toLowerCase()}`;
+    }
+
+    function parseTimeMinutes(t) {
+      if (!t) return 9999;
+      const m = t.trim().toUpperCase().match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/);
+      if (!m) return 9999;
+      let h = parseInt(m[1], 10);
+      const mins = parseInt(m[2], 10);
+      if (m[3] === 'PM' && h < 12) h += 12;
+      if (m[3] === 'AM' && h === 12) h = 0;
+      return h * 60 + mins;
+    }
+
+    function getSortedEvents() {
+      return [...state.events].sort((a, b) => parseTimeMinutes(a.serviceTime) - parseTimeMinutes(b.serviceTime));
+    }
+
+    function getAggregatedGroups(deptId) {
+      const platedMap = new Map();
+      const buffetList = [];
+
+      getSortedEvents().forEach(ev => {
+        const isBuffet = ev.serviceStyle === 'Buffet';
+        ev.items.forEach(item => {
+          if (item.department !== deptId) return;
+          if (isBuffet) {
+            buffetList.push({
+              key: makeNormKey(item.name, 'buffet'),
+              eventId: ev.id,
+              itemId: item.id,
+              name: item.name.trim(),
+              guestCount: ev.guestCount,
+              eventName: ev.eventName,
+              serviceTime: ev.serviceTime,
+              notes: item.notes || '',
+              completed: Boolean(item.completed)
+            });
+          } else {
+            const key = makeNormKey(item.name, item.unit);
+            if (!platedMap.has(key)) {
+              platedMap.set(key, {
+                key,
+                name: item.name.trim(),
+                unit: (item.unit || 'portions').trim(),
+                totalQty: 0,
+                completed: true
+              });
+            }
+            const entry = platedMap.get(key);
+            entry.totalQty += Number(item.quantity) || 0;
+            if (!item.completed) entry.completed = false;
+          }
+        });
+      });
+
+      return {
+        plated: Array.from(platedMap.values()),
+        buffet: buffetList
+      };
+    }
+
+    // ==========================================
+    // 6. RENDERING (SCREEN + CLEAN CLIPBOARD PRINT)
+    // ==========================================
+    function setActiveTab(tabId) {
+      state.activeTab = tabId;
+      renderApp();
+    }
+
+    function setSubView(view) {
+      state.subView = view;
+      renderApp();
+    }
+
+    function confirmClearDay() {
+      showDialog(
+        'Clear Today’s Prep List?',
+        'This removes all events and checked items so you can start fresh for tomorrow.',
+        [
+          {
+            label: 'Clear Day',
+            danger: true,
+            onClick: () => {
+              state.events = [];
+              saveState();
+              renderApp();
+            }
+          },
+          { label: 'Cancel', primary: false }
+        ]
+      );
+    }
+
+    function renderApp() {
+      const hasEvents = state.events.length > 0;
+      document.getElementById('emptyState').classList.toggle('hidden', hasEvents);
+      document.getElementById('controlsBar').classList.toggle('hidden', !hasEvents);
+
+      ['hotBanquet', 'gardeMange', 'pastry'].forEach(deptId => {
+        let remaining = 0;
+        state.events.forEach(ev => {
+          ev.items.forEach(i => {
+            if (i.department === deptId && !i.completed) remaining++;
+          });
+        });
+        document.getElementById(`badge-${deptId}`).textContent = remaining;
+
+        const btn = document.getElementById(`tab-${deptId}`);
+        btn.className = `touch-target flex flex-col sm:flex-row items-center justify-center sm:justify-between px-3 py-2.5 rounded-xl font-black text-sm border-2 transition ${
+          state.activeTab === deptId
+            ? DEPARTMENTS[deptId].tabActive
+            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+        }`;
+      });
+
+      const byEvBtn = document.getElementById('viewBtn-byEvent');
+      const totBtn = document.getElementById('viewBtn-totalPrep');
+      byEvBtn.className = `px-4 py-2 rounded-lg text-sm font-extrabold transition ${
+        state.subView === 'byEvent' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+      }`;
+      totBtn.className = `px-4 py-2 rounded-lg text-sm font-extrabold transition ${
+        state.subView === 'totalPrep' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+      }`;
+
+      const container = document.getElementById('prepListContainer');
+      if (!hasEvents) {
+        container.innerHTML = '';
+        return;
+      }
+
+      container.innerHTML = state.subView === 'totalPrep'
+        ? renderTotalPrepView(state.activeTab)
+        : renderByEventView(state.activeTab);
+    }
+
+    function renderByEventView(deptId) {
+      const dept = DEPARTMENTS[deptId];
+      const eventsForDept = getSortedEvents().filter(ev => ev.items.some(i => i.department === deptId));
+
+      if (!eventsForDept.length) {
+        return `<div class="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm font-bold text-slate-500">No prep items assigned to ${dept.label}.</div>`;
+      }
+
+      return eventsForDept.map(ev => {
+        const isBuffet = ev.serviceStyle === 'Buffet';
+        const items = ev.items.filter(i => i.department === deptId);
+        return `
+          <section class="bg-white rounded-2xl border-2 ${isBuffet ? 'border-amber-400' : 'border-slate-200'} shadow-sm overflow-hidden">
+            <div class="px-4 py-3.5 ${isBuffet ? 'bg-amber-50/60' : 'bg-slate-50'} border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div class="flex flex-wrap items-center gap-2 text-xs sm:text-sm font-black">
+                  <span class="px-2.5 py-1 rounded-lg bg-slate-900 text-white">${escapeHtml(ev.serviceTime)}</span>
+                  <span class="px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-slate-800">${escapeHtml(ev.location)}</span>
+                  ${isBuffet
+                    ? `<span class="px-2.5 py-1 rounded-lg bg-amber-600 text-white uppercase tracking-wide">BUFFET • ${ev.guestCount} PAX</span>`
+                    : `<span class="px-2.5 py-1 rounded-lg bg-slate-200 text-slate-900 uppercase tracking-wide">PLATED • ${ev.guestCount} PAX</span>`
+                  }
+                </div>
+                <h2 class="text-base sm:text-lg font-black text-slate-900 mt-1.5">${escapeHtml(ev.eventName)}</h2>
+              </div>
+
+              <button onclick="editEvent('${ev.id}')" class="touch-target px-3 py-1.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs">
+                Edit
+              </button>
+            </div>
+
+            ${ev.allergiesAndNotes && ev.allergiesAndNotes.length ? `
+              <div class="px-4 py-2 bg-rose-50 border-b border-rose-200 flex flex-wrap items-center gap-1.5">
+                <span class="text-xs font-black text-rose-800 uppercase">Allergies:</span>
+                ${ev.allergiesAndNotes.map(a => `<span class="px-2 py-0.5 rounded bg-rose-600 text-white font-extrabold text-xs">${escapeHtml(a)}</span>`).join('')}
+              </div>
+            ` : ''}
+
+            <div class="divide-y divide-slate-100">
+              ${items.map(item => `
+                <div onclick="toggleItem('${ev.id}', '${item.id}')" class="touch-target flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-slate-50 active:bg-slate-100 select-none transition">
+                  <div class="w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 transition ${item.completed ? `${dept.bg} border-transparent text-white` : 'border-slate-300 bg-white'}">
+                    ${item.completed ? `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>` : ''}
+                  </div>
+
+                  <div class="flex-1 min-w-0 ${item.completed ? 'line-through opacity-45' : ''}">
+                    <div class="flex flex-wrap items-baseline justify-between gap-2">
+                      <span class="text-base font-extrabold text-slate-900">
+                        ${!isBuffet && item.quantity ? `<span class="text-slate-950 font-black mr-1">${item.quantity}x</span>` : ''}${escapeHtml(item.name)}
+                      </span>
+                      ${!isBuffet && item.quantity
+                        ? `<span class="px-2.5 py-0.5 rounded-lg ${dept.badge} font-black text-sm shrink-0">${item.quantity} ${escapeHtml(item.unit || 'portions')}</span>`
+                        : `<span class="px-2.5 py-0.5 rounded-lg bg-amber-100 text-amber-950 font-black text-xs uppercase shrink-0">Buffet (${ev.guestCount} Pax)</span>`
+                      }
+                    </div>
+                    ${item.notes ? `<p class="text-xs sm:text-sm font-medium text-slate-600 mt-0.5">${escapeHtml(item.notes)}</p>` : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </section>
+        `;
+      }).join('');
+    }
+
+    function renderTotalPrepView(deptId) {
+      const dept = DEPARTMENTS[deptId];
+      const { plated, buffet } = getAggregatedGroups(deptId);
+
+      if (!plated.length && !buffet.length) {
+        return `<div class="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm font-bold text-slate-500">No prep items assigned to ${dept.label}.</div>`;
+      }
+
+      let html = '';
+
+      if (plated.length) {
+        html += `
+          <section class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
+              <h2 class="text-sm sm:text-base font-black uppercase tracking-wide">${dept.label} — Plated Totals</h2>
+              <span class="text-xs font-bold text-slate-300">${plated.length} Items</span>
+            </div>
+            <div class="divide-y divide-slate-100">
+              ${plated.map(g => `
+                <div onclick="toggleAggregatedItem('${escapeAttr(g.key)}', '${deptId}', 'plated')" class="touch-target flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-slate-50 active:bg-slate-100 select-none transition">
+                  <div class="w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 transition ${g.completed ? `${dept.bg} border-transparent text-white` : 'border-slate-300 bg-white'}">
+                    ${g.completed ? `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>` : ''}
+                  </div>
+                  <div class="flex-1 flex items-center justify-between gap-3 ${g.completed ? 'line-through opacity-45' : ''}">
+                    <span class="text-base sm:text-lg font-extrabold text-slate-900">${escapeHtml(g.name)}</span>
+                    <span class="px-3 py-1 rounded-xl ${dept.bg} text-white font-black text-sm sm:text-base shrink-0">${g.totalQty} ${escapeHtml(g.unit)}</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </section>
+        `;
+      }
+
+      if (buffet.length) {
+        html += `
+          <section class="bg-white rounded-2xl border-2 border-amber-400 shadow-sm overflow-hidden">
+            <div class="px-4 py-3 bg-amber-600 text-white flex items-center justify-between">
+              <h2 class="text-sm sm:text-base font-black uppercase tracking-wide">${dept.label} — Buffet Prep (Scale to Pax)</h2>
+              <span class="text-xs font-bold text-amber-100">${buffet.length} Items</span>
+            </div>
+            <div class="divide-y divide-slate-100">
+              ${buffet.map(b => `
+                <div onclick="toggleItem('${b.eventId}', '${b.itemId}')" class="touch-target flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-slate-50 active:bg-slate-100 select-none transition">
+                  <div class="w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 transition ${b.completed ? `${dept.bg} border-transparent text-white` : 'border-slate-300 bg-white'}">
+                    ${b.completed ? `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>` : ''}
+                  </div>
+                  <div class="flex-1 min-w-0 ${b.completed ? 'line-through opacity-45' : ''}">
+                    <div class="flex flex-wrap items-baseline justify-between gap-2">
+                      <span class="text-base sm:text-lg font-extrabold text-slate-900">${escapeHtml(b.name)}</span>
+                      <span class="px-2.5 py-0.5 rounded-lg bg-amber-100 text-amber-950 font-black text-xs uppercase shrink-0">Buffet (${b.guestCount} Pax) • ${escapeHtml(b.serviceTime)}</span>
+                    </div>
+                    ${b.notes ? `<p class="text-xs sm:text-sm font-medium text-slate-600 mt-0.5">${escapeHtml(b.notes)}</p>` : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </section>
+        `;
+      }
+
+      return html;
+    }
+
+    // Build Ultra-Clean, Ink-Efficient Clipboard Print Sheet (No boxes, lines, or duplicate counts)
     function printPrepList() {
       const deptId = state.activeTab;
       const dept = DEPARTMENTS[deptId];
       const { plated, buffet } = getAggregatedGroups(deptId);
       const eventsForDept = getSortedEvents().filter(ev => ev.items.some(i => i.department === deptId));
-      const batchEventDate = (eventsForDept.find(ev => ev.eventDate) || state.events.find(ev => ev.eventDate))?.eventDate || todayLabel;
 
       const printEl = document.getElementById('printContainer');
       printEl.innerHTML = `
         <div class="mb-3 flex justify-between items-baseline">
           <div>
             <span class="text-lg font-black uppercase">${dept.label} PREP</span>
-            <span class="text-xs font-black ml-2">EVENT DATE: ${escapeHtml(batchEventDate)}</span>
+            <span class="text-xs font-bold ml-2">${todayLabel}</span>
           </div>
           <div class="text-xs font-bold">COOK: ___________________</div>
         </div>
 
         <!-- 1. TOTAL PREP SUMMARY (PLATED COMBINED + BUFFET SEPARATE) -->
         <div class="print-section mb-4">
-<!-- ... existing code ... -->
+          <div class="text-xs font-black uppercase tracking-wider mb-1">TOTAL PREP</div>
+          ${plated.length ? `
+            <div>
+              ${plated.map(g => `
+                <div class="py-0.5 flex items-baseline justify-between gap-2">
+                  <div>
+                    <span class="print-box"></span>
+                    <span class="font-bold">${escapeHtml(g.name)}</span>
+                  </div>
+                  <span class="font-black shrink-0">${g.totalQty} ${escapeHtml(g.unit)}</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+
+          ${buffet.length ? `
+            <div class="${plated.length ? 'mt-2' : ''}">
+              <div class="text-xs font-black uppercase mb-0.5">Buffet (Scale to Pax)</div>
+              <div>
+                ${buffet.map(b => `
+                  <div class="py-0.5 flex items-baseline justify-between gap-2">
+                    <div>
+                      <span class="print-box"></span>
+                      <span class="font-bold">${escapeHtml(b.name)}</span>
+                      ${b.notes ? `<span class="text-xs"> — ${escapeHtml(b.notes)}</span>` : ''}
+                    </div>
+                    <span class="font-bold text-xs shrink-0">Buffet (${b.guestCount} Pax)</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          ${!plated.length && !buffet.length ? `<p class="text-xs">No items.</p>` : ''}
+        </div>
+
+        <!-- 2. EVENT BREAKDOWN -->
+        <div class="text-xs font-black uppercase tracking-wider mb-1.5">BY EVENT</div>
+        ${eventsForDept.map(ev => {
+          const isBuffet = ev.serviceStyle === 'Buffet';
+          const items = ev.items.filter(i => i.department === deptId);
+          return `
+            <div class="print-section mb-3">
+              <div class="font-black text-xs mb-0.5">
+                [${isBuffet ? `BUFFET • ${ev.guestCount} PAX` : `PLATED • ${ev.guestCount} PAX`}]
+                ${escapeHtml(ev.serviceTime)} | ${escapeHtml(ev.location)} — ${escapeHtml(ev.eventName)}
+              </div>
+              ${ev.allergiesAndNotes && ev.allergiesAndNotes.length ? `
+                <div class="text-xs font-bold mb-0.5">
+                  ALLERGIES: ${ev.allergiesAndNotes.map(a => escapeHtml(a)).join(' • ')}
+                </div>
+              ` : ''}
+              <div>
+                ${items.map(item => `
+                  <div class="py-0.5 flex items-baseline justify-between gap-2">
+                    <div>
+                      <span class="print-box"></span>
+                      <span class="font-bold">${escapeHtml(item.name)}</span>
+                      ${item.notes ? `<span class="text-xs"> — ${escapeHtml(item.notes)}</span>` : ''}
+                    </div>
+                    <span class="font-black shrink-0 text-xs">${!isBuffet && item.quantity ? `${item.quantity} ${escapeHtml(item.unit || 'portions')}` : `Buffet (${ev.guestCount} Pax)`}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      `;
+
+      window.print();
+    }
+
+    // ==========================================
+    // 7. SETTINGS, API KEY TEST & DIALOG HELPERS
+    // ==========================================
+    function openSettingsModal() {
+      document.getElementById('apiKeyInput').value = localStorage.getItem(STORAGE_KEY_API) || '';
+      const statusEl = document.getElementById('apiTestStatus');
+      statusEl.classList.add('hidden');
+      document.getElementById('settingsModal').classList.remove('hidden');
+    }
+
+    function closeSettingsModal() {
+      document.getElementById('settingsModal').classList.add('hidden');
+    }
+
+    function saveApiKey() {
+      const val = document.getElementById('apiKeyInput').value.trim();
+      localStorage.setItem(STORAGE_KEY_API, val);
+      updateApiIndicator();
+      closeSettingsModal();
+    }
+
+    function copyCrewSetupLink() {
+      const key = (document.getElementById('apiKeyInput').value || localStorage.getItem(STORAGE_KEY_API) || '').trim();
+      const statusEl = document.getElementById('apiTestStatus');
+      if (!key) {
+        statusEl.textContent = 'Paste your API key above first, then tap Copy Crew Link.';
+        statusEl.className = 'text-xs font-bold mt-2 px-3 py-2 rounded-xl bg-rose-50 text-rose-700';
+        return;
+      }
+      localStorage.setItem(STORAGE_KEY_API, key);
+      updateApiIndicator();
+
+      const baseUrl = window.location.origin + window.location.pathname;
+      const magicLink = `${baseUrl}#key=${encodeURIComponent(key)}`;
+
+      const tempInput = document.createElement('textarea');
+      tempInput.value = magicLink;
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempInput);
+
+      statusEl.textContent = '✓ Crew Setup Link copied! Text it to your team or turn it into a QR code.';
+      statusEl.className = 'text-xs font-bold mt-2 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-800';
+    }
+
+    async function testApiKey() {
+      const key = document.getElementById('apiKeyInput').value.trim();
+      const statusEl = document.getElementById('apiTestStatus');
+      const btn = document.getElementById('testApiBtn');
+
+      if (!key) {
+        statusEl.textContent = 'Please paste an API key first.';
+        statusEl.className = 'text-xs font-bold mt-2 px-3 py-2 rounded-xl bg-rose-50 text-rose-700';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Testing...';
+      statusEl.textContent = 'Connecting to Google Gemini...';
+      statusEl.className = 'text-xs font-bold mt-2 px-3 py-2 rounded-xl bg-slate-100 text-slate-700';
+
+      try {
+        await callGeminiWithFallback(key, {
+          contents: [{ role: 'user', parts: [{ text: 'Reply with OK' }] }]
+        });
+        localStorage.setItem(STORAGE_KEY_API, key);
+        updateApiIndicator();
+        statusEl.textContent = '✓ Connected! Your API key is working and saved.';
+        statusEl.className = 'text-xs font-bold mt-2 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-800';
+      } catch (err) {
+        statusEl.textContent = `✕ Failed: ${err.message}`;
+        statusEl.className = 'text-xs font-bold mt-2 px-3 py-2 rounded-xl bg-rose-50 text-rose-700';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test Key';
+      }
+    }
+
+    function showDialog(title, message, buttons = []) {
+      document.getElementById('dialogTitle').textContent = title;
+      document.getElementById('dialogMessage').textContent = message;
+      const box = document.getElementById('dialogButtons');
+      box.innerHTML = '';
+      buttons.forEach(btn => {
+        const b = document.createElement('button');
+        b.textContent = btn.label;
+        b.className = `touch-target px-4 py-2 rounded-xl font-extrabold text-sm ${
+          btn.danger ? 'bg-rose-600 text-white' : btn.primary ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
+        }`;
+        b.onclick = () => {
+          document.getElementById('dialogModal').classList.add('hidden');
+          if (btn.onClick) btn.onClick();
+        };
+        box.appendChild(b);
+      });
+      document.getElementById('dialogModal').classList.remove('hidden');
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function escapeAttr(str) {
+      return String(str).replace(/'/g, "\\'");
+    }
+
+    renderApp();
+  </script>
+</body>
+</html>
