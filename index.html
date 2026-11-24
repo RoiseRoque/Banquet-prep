@@ -21,13 +21,13 @@
       min-width: 48px;
     }
 
-    /* Ultra-clean, ink-efficient clipboard print layout (no boxes or divider lines) */
+    /* Ultra-clean, ink-efficient 1–2 page clipboard print layout matching Prep List Template */
     @media print {
       body {
         background: #ffffff !important;
         color: #000000 !important;
         font-size: 11.5pt;
-        line-height: 1.5;
+        line-height: 1.45;
         padding: 0 !important;
       }
       .no-print {
@@ -37,13 +37,17 @@
         display: block !important;
       }
       .print-section {
-        margin-bottom: 18px !important;
+        margin-bottom: 14px !important;
         break-inside: avoid;
+      }
+      .print-page-break {
+        break-before: page !important;
+        page-break-before: always !important;
       }
       .print-box {
         display: inline-block !important;
-        width: 15px !important;
-        height: 15px !important;
+        width: 14px !important;
+        height: 14px !important;
         border: 1.8px solid #000000 !important;
         margin-right: 10px !important;
         vertical-align: -2px;
@@ -1133,8 +1137,41 @@ For each item return:
       renderApp();
     }
 
+    function normalizeDishTitle(name) {
+      return (name || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/[^\w\s-]/g, '');
+    }
+
+    function normalizeUnitLabel(unit) {
+      const u = (unit || 'portions').trim().toLowerCase();
+      if (u === 'portion' || u === 'portions' || u === 'pax' || u === 'ea' || u === 'each' || u === '') {
+        return 'portions';
+      }
+      return u;
+    }
+
     function makeNormKey(name, unit) {
-      return `${name.trim().toLowerCase()}__${(unit || 'portions').trim().toLowerCase()}`;
+      const cleanName = normalizeDishTitle(name);
+      if (unit === 'buffet') return `${cleanName}__buffet`;
+      return `${cleanName}__${normalizeUnitLabel(unit)}`;
+    }
+
+    // Shorten menu item names to a concise 2-3 word culinary label for print sheets
+    function getShortMenuName(name) {
+      const cleaned = (name || '')
+        .replace(/\([^)]*\)/g, '')
+        .replace(/\s+with\s+.*/i, '')
+        .replace(/\s+and\s+.*/i, '')
+        .replace(/\s+&\s+.*/i, '')
+        .replace(/,.*$/, '')
+        .trim();
+
+      const words = cleaned.split(/\s+/).filter(Boolean);
+      if (words.length <= 3) return words.join(' ');
+      return words.slice(0, 3).join(' ');
     }
 
     function parseTimeMinutes(t) {
@@ -1154,37 +1191,50 @@ For each item return:
 
     function getAggregatedGroups(deptId) {
       const platedMap = new Map();
-      const buffetList = [];
+      const buffetMap = new Map();
 
       getSortedEvents().forEach(ev => {
         const isBuffet = ev.serviceStyle === 'Buffet';
+        const seenInEvent = new Set();
+
         ev.items.forEach(item => {
           if (item.department !== deptId) return;
           if (isBuffet) {
-            buffetList.push({
-              key: makeNormKey(item.name, 'buffet'),
-              eventId: ev.id,
-              itemId: item.id,
-              name: item.name.trim(),
-              guestCount: ev.guestCount,
-              eventName: ev.eventName,
-              serviceTime: ev.serviceTime,
-              notes: item.notes || '',
-              completed: Boolean(item.completed)
-            });
+            const key = makeNormKey(item.name, 'buffet');
+            if (!buffetMap.has(key)) {
+              buffetMap.set(key, {
+                key,
+                eventId: ev.id,
+                itemId: item.id,
+                name: item.name.trim(),
+                guestCount: 0,
+                eventName: ev.eventName,
+                serviceTime: ev.serviceTime,
+                notes: item.notes || '',
+                completed: true
+              });
+            }
+            const bEntry = buffetMap.get(key);
+            if (!seenInEvent.has(key)) {
+              bEntry.guestCount += Number(ev.guestCount) || 0;
+              seenInEvent.add(key);
+            }
+            if (!item.completed) bEntry.completed = false;
           } else {
             const key = makeNormKey(item.name, item.unit);
+            const displayUnit = normalizeUnitLabel(item.unit);
+            const qtyToAdd = Number(item.quantity) > 0 ? Number(item.quantity) : (Number(ev.guestCount) || 0);
             if (!platedMap.has(key)) {
               platedMap.set(key, {
                 key,
                 name: item.name.trim(),
-                unit: (item.unit || 'portions').trim(),
+                unit: displayUnit,
                 totalQty: 0,
                 completed: true
               });
             }
             const entry = platedMap.get(key);
-            entry.totalQty += Number(item.quantity) || 0;
+            entry.totalQty += qtyToAdd;
             if (!item.completed) entry.completed = false;
           }
         });
@@ -1192,7 +1242,7 @@ For each item return:
 
       return {
         plated: Array.from(platedMap.values()),
-        buffet: buffetList
+        buffet: Array.from(buffetMap.values())
       };
     }
 
@@ -1378,14 +1428,14 @@ For each item return:
             </div>
             <div class="divide-y divide-slate-100">
               ${buffet.map(b => `
-                <div onclick="toggleItem('${b.eventId}', '${b.itemId}')" class="touch-target flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-slate-50 active:bg-slate-100 select-none transition">
+                <div onclick="toggleAggregatedItem('${escapeAttr(b.key)}', '${deptId}', 'buffet')" class="touch-target flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-slate-50 active:bg-slate-100 select-none transition">
                   <div class="w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 transition ${b.completed ? `${dept.bg} border-transparent text-white` : 'border-slate-300 bg-white'}">
                     ${b.completed ? `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>` : ''}
                   </div>
                   <div class="flex-1 min-w-0 ${b.completed ? 'line-through opacity-45' : ''}">
                     <div class="flex flex-wrap items-baseline justify-between gap-2">
                       <span class="text-base sm:text-lg font-extrabold text-slate-900">${escapeHtml(b.name)}</span>
-                      <span class="px-2.5 py-0.5 rounded-lg bg-amber-100 text-amber-950 font-black text-xs uppercase shrink-0">Buffet (${b.guestCount} Pax) • ${escapeHtml(b.serviceTime)}</span>
+                      <span class="px-2.5 py-0.5 rounded-lg bg-amber-100 text-amber-950 font-black text-xs uppercase shrink-0">Buffet (${b.guestCount} Pax)</span>
                     </div>
                     ${b.notes ? `<p class="text-xs sm:text-sm font-medium text-slate-600 mt-0.5">${escapeHtml(b.notes)}</p>` : ''}
                   </div>
@@ -1399,7 +1449,9 @@ For each item return:
       return html;
     }
 
-    // Build Ultra-Clean, Ink-Efficient Clipboard Print Sheet (No boxes, lines, or duplicate counts)
+    // Build Minimalist 1-to-2 Page Print Sheet Guided by "Prep List Template"
+    // Page 1: By Event (Date -> Time - Room - # of People -> indented 2-3 word menu items)
+    // Page 2 (Separate Page): Total Prep Summary (Deduplicated totals across all events)
     function printPrepList() {
       const deptId = state.activeTab;
       const dept = DEPARTMENTS[deptId];
@@ -1409,82 +1461,67 @@ For each item return:
       const prepDateLabel = beoDates.length ? beoDates.join(' / ') : todayLabel;
 
       const sheetHtml = `
-        <div class="mb-5 flex justify-between items-baseline">
-          <div>
-            <span class="text-2xl font-black uppercase tracking-tight">${dept.label} PREP</span>
+        <!-- PAGE 1: BY EVENT (MATCHING PREP LIST TEMPLATE) -->
+        <div>
+          <div class="mb-4">
+            <span class="text-xl font-black underline">${escapeHtml(prepDateLabel)}</span>
           </div>
-          <div class="text-sm font-black uppercase">DATE: ${escapeHtml(prepDateLabel)}</div>
+
+          ${eventsForDept.length ? eventsForDept.map(ev => {
+            const isBuffet = ev.serviceStyle === 'Buffet';
+            const items = ev.items.filter(i => i.department === deptId);
+            return `
+              <div class="print-section mb-5">
+                <div class="font-black text-base mb-1.5">
+                  ${escapeHtml(ev.serviceTime)} - ${escapeHtml(ev.location)} - ${ev.guestCount} Pax${isBuffet ? ' (Buffet)' : ''}
+                </div>
+                <div class="pl-6 space-y-1.5">
+                  ${items.map(item => `
+                    <div class="flex items-baseline justify-between gap-4 text-base">
+                      <div>
+                        <span class="print-box"></span>
+                        <span class="font-bold">${escapeHtml(getShortMenuName(item.name))}</span>
+                      </div>
+                      ${!isBuffet && item.quantity ? `<span class="font-extrabold shrink-0">${item.quantity} ${escapeHtml(normalizeUnitLabel(item.unit))}</span>` : ''}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            `;
+          }).join('') : `<p class="text-sm font-semibold">No events scheduled.</p>`}
         </div>
 
-        <!-- 1. TOTAL PREP SUMMARY (PLATED COMBINED + BUFFET SEPARATE) -->
-        <div class="print-section mb-6">
-          <div class="text-sm font-black uppercase tracking-wider mb-2.5">TOTAL PREP</div>
-          ${plated.length ? `
-            <div>
-              ${plated.map(g => `
-                <div class="py-2 flex items-baseline justify-between gap-3">
-                  <div class="text-base">
-                    <span class="print-box"></span>
-                    <span class="font-extrabold">${escapeHtml(g.name)}</span>
-                  </div>
-                  <span class="text-base font-black shrink-0">${g.totalQty} ${escapeHtml(g.unit)}</span>
+        <!-- PAGE 2: TOTAL PREP (SEPARATE PAGE, DEDUPLICATED TOTALS) -->
+        <div class="print-page-break">
+          <div class="mb-4 flex items-baseline justify-between">
+            <span class="text-xl font-black uppercase">TOTAL PREP — ${escapeHtml(dept.label)}</span>
+            <span class="text-base font-black">${escapeHtml(prepDateLabel)}</span>
+          </div>
+
+          <div class="pl-2 space-y-2">
+            ${plated.map(g => `
+              <div class="flex items-baseline justify-between gap-4 text-base py-1">
+                <div>
+                  <span class="print-box"></span>
+                  <span class="font-extrabold">${escapeHtml(getShortMenuName(g.name))}</span>
                 </div>
-              `).join('')}
-            </div>
-          ` : ''}
-
-          ${buffet.length ? `
-            <div class="${plated.length ? 'mt-4' : ''}">
-              <div class="text-sm font-black uppercase mb-2">Buffet (Scale to Pax)</div>
-              <div>
-                ${buffet.map(b => `
-                  <div class="py-2 flex items-baseline justify-between gap-3">
-                    <div class="text-base">
-                      <span class="print-box"></span>
-                      <span class="font-extrabold">${escapeHtml(b.name)}</span>
-                      ${b.notes ? `<span class="text-sm font-semibold"> — ${escapeHtml(b.notes)}</span>` : ''}
-                    </div>
-                    <span class="font-black text-sm shrink-0">Buffet (${b.guestCount} Pax)</span>
-                  </div>
-                `).join('')}
+                <span class="font-black shrink-0">${g.totalQty} ${escapeHtml(g.unit)}</span>
               </div>
-            </div>
-          ` : ''}
+            `).join('')}
 
-          ${!plated.length && !buffet.length ? `<p class="text-sm font-semibold">No items.</p>` : ''}
+            ${buffet.map(b => `
+              <div class="flex items-baseline justify-between gap-4 text-base py-1">
+                <div>
+                  <span class="print-box"></span>
+                  <span class="font-extrabold">${escapeHtml(getShortMenuName(b.name))}</span>
+                </div>
+                <span class="font-black shrink-0">Buffet · ${b.guestCount} Pax</span>
+              </div>
+            `).join('')}
+
+            ${!plated.length && !buffet.length ? `<p class="text-sm font-semibold">No items scheduled.</p>` : ''}
+          </div>
         </div>
-
-        <!-- 2. EVENT BREAKDOWN -->
-        <div class="text-sm font-black uppercase tracking-wider mb-3 mt-6">BY EVENT</div>
-        ${eventsForDept.map(ev => {
-          const isBuffet = ev.serviceStyle === 'Buffet';
-          const items = ev.items.filter(i => i.department === deptId);
-          return `
-            <div class="print-section mb-6">
-              <div class="font-black text-sm uppercase mb-1.5">
-                [${isBuffet ? `BUFFET • ${ev.guestCount} PAX` : `PLATED • ${ev.guestCount} PAX`}]
-                ${escapeHtml(ev.serviceTime)} | ${escapeHtml(ev.location)} — ${escapeHtml(ev.eventName)}
-              </div>
-              ${ev.allergiesAndNotes && ev.allergiesAndNotes.length ? `
-                <div class="text-sm font-black uppercase mb-2">
-                  ALLERGIES: ${ev.allergiesAndNotes.map(a => escapeHtml(a)).join(' • ')}
-                </div>
-              ` : ''}
-              <div>
-                ${items.map(item => `
-                  <div class="py-2 flex items-baseline justify-between gap-3">
-                    <div class="text-base">
-                      <span class="print-box"></span>
-                      <span class="font-extrabold">${escapeHtml(item.name)}</span>
-                      ${item.notes ? `<span class="text-sm font-semibold"> — ${escapeHtml(item.notes)}</span>` : ''}
-                    </div>
-                    <span class="font-black shrink-0 text-sm">${!isBuffet && item.quantity ? `${item.quantity} ${escapeHtml(item.unit || 'portions')}` : `Buffet (${ev.guestCount} Pax)`}</span>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          `;
-        }).join('')}
       `;
 
       const printEl = document.getElementById('printContainer');
@@ -1498,9 +1535,10 @@ For each item return:
           printWin.document.write(`<!DOCTYPE html><html><head><title>${dept.label} Prep List</title>
             <script src="https://cdn.tailwindcss.com"><\/script>
             <style>
-              body { font-family: Inter, -apple-system, sans-serif; color: #000; background: #fff; font-size: 11.5pt; line-height: 1.5; padding: 24px; }
-              .print-section { margin-bottom: 18px; break-inside: avoid; }
-              .print-box { display: inline-block; width: 15px; height: 15px; border: 1.8px solid #000; margin-right: 10px; vertical-align: -2px; }
+              body { font-family: Inter, -apple-system, sans-serif; color: #000; background: #fff; font-size: 11.5pt; line-height: 1.45; padding: 24px; }
+              .print-section { margin-bottom: 14px; break-inside: avoid; }
+              .print-page-break { break-before: page; page-break-before: always; }
+              .print-box { display: inline-block; width: 14px; height: 14px; border: 1.8px solid #000; margin-right: 10px; vertical-align: -2px; }
               @page { margin: 0.4in; }
             </style>
           </head><body>${sheetHtml}<script>setTimeout(() => { window.print(); }, 400);<\/script></body></html>`);
