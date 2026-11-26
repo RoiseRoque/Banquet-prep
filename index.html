@@ -222,12 +222,15 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
           <div class="sm:col-span-2">
             <label class="block text-[11px] font-extrabold uppercase text-slate-500 mb-1">Service Style</label>
-            <div class="grid grid-cols-2 gap-2">
+            <div class="grid grid-cols-3 gap-2">
               <button type="button" id="styleBtn-Plated" onclick="setDraftServiceStyle('Plated')" class="py-2 px-3 rounded-xl font-black text-xs sm:text-sm border-2 transition">
-                PLATED (Exact Portions)
+                PLATED
               </button>
               <button type="button" id="styleBtn-Buffet" onclick="setDraftServiceStyle('Buffet')" class="py-2 px-3 rounded-xl font-black text-xs sm:text-sm border-2 transition">
-                BUFFET (Based on Pax)
+                BUFFET
+              </button>
+              <button type="button" id="styleBtn-Reception" onclick="setDraftServiceStyle('Reception')" class="py-2 px-3 rounded-xl font-black text-xs sm:text-sm border-2 transition">
+                RECEPTION
               </button>
             </div>
           </div>
@@ -666,39 +669,48 @@
       }
 
       const systemPrompt = `You are a Banquet Chef creating a single daily kitchen prep list from Banquet Event Order (BEO) photos.
-The uploaded photos may contain MULTIPLE DIFFERENT EVENTS or multiple pages of the same event.
-Group pages that belong to the SAME event together, and output a SEPARATE event object in the "events" array for each distinct function/event.
+The uploaded photos may contain MULTIPLE DIFFERENT EVENTS or multiple pages of the same event (e.g., Page 1 of 2, Page 2 of 2).
+CRITICAL PAGE GROUPING RULE:
+- Look for the Event Order Number / BEO Number / Function Number printed on each page (such as "BEO #", "Event #", "Order #", or matching function title + date + room).
+- All pages sharing the SAME Event Order Number (or clearly continuing the same function across multiple pages) MUST be merged into ONE single event object in the "events" array. Do NOT split a multi-page BEO into separate events.
+- Only create separate event objects when pages have DIFFERENT Event Order Numbers or are distinct functions.
+
 Extract ONLY essential prep information (ignore room setup, AV, linen, billing, and equipment clutter).
 
 For EACH distinct event extract:
-1. eventName: Function/client name.
-2. eventDate: Date of the event/function printed on the BEO (formatted cleanly like "Fri, Nov 27, 2026"; if not found, return "").
-3. serviceStyle: "Plated" or "Buffet" (detect whether the meal is individually plated or a buffet/food station).
-4. location: Room or ballroom name.
-5. serviceTime: Food service time (e.g., "12:30 PM" or "18:30").
-6. guestCount: Guaranteed guest count (Pax).
-7. allergiesAndNotes: Array of critical dietary allergies or special meal alerts (e.g., ["4 Vegan", "2 Nut Allergy"]).
-8. items: Every culinary food item sorted into:
-   - "hotBanquet": Hot proteins, hot starches, hot vegetables, savory sauces/gravies, soups, hot hors d'oeuvres.
-   - "gardeMange": Cold appetizers, salads, dressings, charcuterie/cheese, cold platters, crudités, garnishes.
-   - "pastry": Plated desserts, cakes, petit fours, breads/rolls, breakfast pastries, dessert sauces.
+1. eventOrderNumber: The BEO / Event Order number printed on the document (e.g., "BEO-1042" or "48291"; return "" if none).
+2. eventName: Function/client name.
+3. eventDate: Date of the event/function printed on the BEO (formatted cleanly like "Fri, Nov 27, 2026"; if not found, return "").
+4. serviceStyle: "Plated", "Buffet", or "Reception":
+   - Detect "Reception" when keywords suggest a cocktail/standing reception (e.g., "Reception", "Cocktail Reception", "Welcome Reception", "Passed Hors d'Oeuvres", "Canapés", "Tray Passed", "Mingling", "Social Hour"), typically featuring passed or stationed items ordered by the dozen (hot/cold bites, pastries/desserts) often in the late afternoon or evening.
+   - Detect "Buffet" when the meal is a seated/self-serve buffet or food station meal.
+   - Detect "Plated" when the meal is individually plated courses.
+5. location: Room or ballroom name.
+6. serviceTime: Food service start time (e.g., "7:30 AM", "12:30 PM", or "6:30 PM").
+7. guestCount: Guaranteed guest count (Pax).
+8. allergiesAndNotes: Array of critical dietary allergies or special meal alerts (e.g., ["4 Vegan", "2 Nut Allergy"]).
+9. items: Every culinary food item sorted into:
+   - "hotBanquet": Hot proteins, hot starches, hot vegetables, savory sauces/gravies, soups, hot hors d'oeuvres/canapés.
+   - "gardeMange": Cold appetizers, cold canapés, salads, dressings, charcuterie/cheese, cold platters, crudités, garnishes.
+   - "pastry": Plated desserts, cakes, petit fours, mini pastries, breads/rolls, breakfast pastries, dessert sauces.
 
 Quantity rules by serviceStyle:
 - If serviceStyle is "Plated": extract exact portion quantity and unit for each dish (e.g., quantity: 140, unit: "portions").
+- If serviceStyle is "Reception": extract the exact ordered quantity and unit (commonly "doz" or "pieces", e.g., quantity: 15, unit: "doz"). If no explicit item quantity is printed, set quantity to 0 and unit to "doz".
 - If serviceStyle is "Buffet": set quantity to 0 and unit to "" because buffet volume is decided by the chef from the guaranteed guestCount (Pax).
 
 For each item return:
 - department: "hotBanquet" | "gardeMange" | "pastry"
 - name: Clean dish name (standardized capitalization so identical items across events match).
-- quantity: Number (exact portions for Plated; 0 for Buffet).
-- unit: Unit string (e.g., "portions", "doz" for Plated; "" for Buffet).
-- notes: Concise prep/garnish spec only (e.g., "Red wine demi" or "Carving station, au jus").`;
+- quantity: Number (exact portions for Plated; ordered dozen/pieces for Reception; 0 for Buffet).
+- unit: Unit string (e.g., "portions" for Plated; "doz" or "pcs" for Reception; "" for Buffet).
+- notes: Concise prep/garnish spec only (e.g., "Red wine demi" or "Passed hot, sesame soy dip").`;
 
       const payload = {
         contents: [{
           role: "user",
           parts: [
-            { text: "Read these Banquet Event Order (BEO) photos and extract all distinct events and their food prep items." },
+            { text: "Read these Banquet Event Order (BEO) photos. Group pages with the same Event Order / BEO number into a single event, classify each event as Plated, Buffet, or Reception, and extract all food prep items." },
             ...imageParts
           ]
         }],
@@ -715,9 +727,10 @@ For each item return:
                 items: {
                   type: "OBJECT",
                   properties: {
+                    eventOrderNumber: { type: "STRING" },
                     eventName: { type: "STRING" },
                     eventDate: { type: "STRING" },
-                    serviceStyle: { type: "STRING", enum: ["Plated", "Buffet"] },
+                    serviceStyle: { type: "STRING", enum: ["Plated", "Buffet", "Reception"] },
                     location: { type: "STRING" },
                     serviceTime: { type: "STRING" },
                     guestCount: { type: "NUMBER" },
@@ -737,7 +750,7 @@ For each item return:
                       }
                     }
                   },
-                  required: ["eventName", "eventDate", "serviceStyle", "location", "serviceTime", "guestCount", "allergiesAndNotes", "items"]
+                  required: ["eventOrderNumber", "eventName", "eventDate", "serviceStyle", "location", "serviceTime", "guestCount", "allergiesAndNotes", "items"]
                 }
               }
             },
@@ -758,28 +771,91 @@ For each item return:
       const parsed = JSON.parse(cleanedJson);
       const rawEvents = Array.isArray(parsed.events) && parsed.events.length ? parsed.events : [parsed];
 
-      return rawEvents.map((ev, eIdx) => {
-        const isBuffet = ev.serviceStyle === 'Buffet';
+      // Post-process safeguard: merge any multi-page BEOs sharing the same Event Order Number
+      const mergedEventsMap = new Map();
+      rawEvents.forEach((ev, eIdx) => {
+        const orderNum = (ev.eventOrderNumber || '').trim().toLowerCase().replace(/^#/, '');
+        const fallbackKey = `${(ev.eventName || '').trim().toLowerCase()}|${(ev.eventDate || '').trim().toLowerCase()}|${(ev.location || '').trim().toLowerCase()}`;
+        const mergeKey = orderNum ? `order:${orderNum}` : (fallbackKey !== '||' ? `meta:${fallbackKey}` : `idx:${eIdx}`);
+
+        if (!mergedEventsMap.has(mergeKey)) {
+          mergedEventsMap.set(mergeKey, {
+            ...ev,
+            allergiesAndNotes: Array.isArray(ev.allergiesAndNotes) ? [...ev.allergiesAndNotes] : [],
+            items: Array.isArray(ev.items) ? [...ev.items] : []
+          });
+        } else {
+          const existing = mergedEventsMap.get(mergeKey);
+          if (!existing.eventDate && ev.eventDate) existing.eventDate = ev.eventDate;
+          if ((!existing.location || existing.location === 'Main Ballroom') && ev.location) existing.location = ev.location;
+          if ((!existing.serviceTime || existing.serviceTime === '18:00') && ev.serviceTime) existing.serviceTime = ev.serviceTime;
+          if (!existing.guestCount && ev.guestCount) existing.guestCount = ev.guestCount;
+          if (ev.serviceStyle === 'Reception' || (existing.serviceStyle === 'Plated' && ev.serviceStyle === 'Buffet')) {
+            existing.serviceStyle = ev.serviceStyle;
+          }
+          if (Array.isArray(ev.allergiesAndNotes)) {
+            ev.allergiesAndNotes.forEach(note => {
+              if (note && !existing.allergiesAndNotes.includes(note)) {
+                existing.allergiesAndNotes.push(note);
+              }
+            });
+          }
+          if (Array.isArray(ev.items)) {
+            existing.items.push(...ev.items);
+          }
+        }
+      });
+
+      return Array.from(mergedEventsMap.values()).map((ev, eIdx) => {
+        const style = detectEventServiceStyle(ev);
+        const isBuffet = style === 'Buffet';
+        const isReception = style === 'Reception';
         return {
           id: 'ev_' + Date.now() + '_' + eIdx + '_' + Math.random().toString(36).slice(2, 5),
+          eventOrderNumber: ev.eventOrderNumber || '',
           eventName: ev.eventName || `Banquet Event ${eIdx + 1}`,
           eventDate: ev.eventDate || '',
-          serviceStyle: isBuffet ? 'Buffet' : 'Plated',
+          serviceStyle: style,
           location: ev.location || 'Main Ballroom',
           serviceTime: ev.serviceTime || '18:00',
           guestCount: Number(ev.guestCount) || 50,
           allergiesAndNotes: Array.isArray(ev.allergiesAndNotes) ? ev.allergiesAndNotes : [],
-          items: (ev.items || []).map((item, idx) => ({
-            id: 'it_' + Date.now() + '_' + eIdx + '_' + idx,
-            department: DEPARTMENTS[item.department] ? item.department : 'hotBanquet',
-            name: item.name || 'Prep Item',
-            quantity: isBuffet ? 0 : (Number(item.quantity) || Number(ev.guestCount) || 1),
-            unit: isBuffet ? '' : (item.unit || 'portions'),
-            notes: item.notes || '',
-            completed: false
-          }))
+          items: (ev.items || []).map((item, idx) => {
+            const rawQty = Number(item.quantity) || 0;
+            const defaultUnit = isReception ? 'doz' : 'portions';
+            return {
+              id: 'it_' + Date.now() + '_' + eIdx + '_' + idx,
+              department: DEPARTMENTS[item.department] ? item.department : 'hotBanquet',
+              name: item.name || 'Prep Item',
+              quantity: isBuffet ? 0 : (isReception ? rawQty : (rawQty || Number(ev.guestCount) || 1)),
+              unit: isBuffet ? '' : (item.unit || defaultUnit),
+              notes: item.notes || '',
+              completed: false
+            };
+          })
         };
       });
+    }
+
+    function detectEventServiceStyle(ev) {
+      if (ev.serviceStyle === 'Reception' || ev.serviceStyle === 'Buffet' || ev.serviceStyle === 'Plated') {
+        if (ev.serviceStyle === 'Reception') return 'Reception';
+      }
+      const textBlob = [
+        ev.eventName || '',
+        ...(ev.allergiesAndNotes || []),
+        ...(ev.items || []).map(i => `${i.name || ''} ${i.unit || ''} ${i.notes || ''}`)
+      ].join(' ').toLowerCase();
+
+      const receptionKeywords = /\b(reception|cocktail|hors d['’]?oeuvres?|canap[eé]s?|tray[- ]passed|passed bites|mingling|social hour)\b/i;
+      const dozenItemsCount = (ev.items || []).filter(i => /\b(doz|dozen)\b/i.test(`${i.unit || ''} ${i.name || ''}`)).length;
+      const mins = parseTimeMinutes(ev.serviceTime);
+      const isEvening = mins >= 16 * 60 && mins < 24 * 60;
+
+      if (receptionKeywords.test(textBlob) || (dozenItemsCount >= 2 && isEvening)) {
+        return 'Reception';
+      }
+      return ev.serviceStyle === 'Buffet' ? 'Buffet' : 'Plated';
     }
 
     // ==========================================
@@ -951,6 +1027,10 @@ For each item return:
           if (!item.quantity) item.quantity = defaultPax;
           if (!item.unit) item.unit = 'portions';
         });
+      } else if (style === 'Reception') {
+        state.reviewDraft.items.forEach(item => {
+          if (!item.unit || item.unit === 'portions') item.unit = 'doz';
+        });
       }
       updateServiceStyleButtons();
       renderReviewItems();
@@ -960,6 +1040,7 @@ For each item return:
       const style = state.reviewDraft?.serviceStyle || 'Plated';
       const platedBtn = document.getElementById('styleBtn-Plated');
       const buffetBtn = document.getElementById('styleBtn-Buffet');
+      const receptionBtn = document.getElementById('styleBtn-Reception');
 
       platedBtn.className = `py-2 px-3 rounded-xl font-black text-xs sm:text-sm border-2 transition ${
         style === 'Plated'
@@ -971,6 +1052,13 @@ For each item return:
           ? 'border-amber-600 bg-amber-600 text-white shadow-sm'
           : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
       }`;
+      if (receptionBtn) {
+        receptionBtn.className = `py-2 px-3 rounded-xl font-black text-xs sm:text-sm border-2 transition ${
+          style === 'Reception'
+            ? 'border-purple-700 bg-purple-700 text-white shadow-sm'
+            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
+        }`;
+      }
     }
 
     function closeReviewModal() {
@@ -1041,13 +1129,15 @@ For each item return:
 
     function addBlankItemToReview() {
       if (!state.reviewDraft) return;
-      const isBuffet = state.reviewDraft.serviceStyle === 'Buffet';
+      const style = state.reviewDraft.serviceStyle || 'Plated';
+      const isBuffet = style === 'Buffet';
+      const isReception = style === 'Reception';
       state.reviewDraft.items.push({
         id: 'it_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
         department: state.activeTab,
         name: '',
-        quantity: isBuffet ? 0 : (Number(document.getElementById('editGuestCount').value) || 50),
-        unit: isBuffet ? '' : 'portions',
+        quantity: isBuffet ? 0 : (isReception ? 10 : (Number(document.getElementById('editGuestCount').value) || 50)),
+        unit: isBuffet ? '' : (isReception ? 'doz' : 'portions'),
         notes: '',
         completed: false
       });
@@ -1057,11 +1147,13 @@ For each item return:
     function saveReviewedEvent() {
       if (!state.reviewDraft) return;
       const allergiesRaw = document.getElementById('editAllergies').value.trim();
-      const isBuffet = state.reviewDraft.serviceStyle === 'Buffet';
+      const style = state.reviewDraft.serviceStyle || 'Plated';
+      const isBuffet = style === 'Buffet';
+      const isReception = style === 'Reception';
 
       const cleanedEvent = {
         ...state.reviewDraft,
-        serviceStyle: isBuffet ? 'Buffet' : 'Plated',
+        serviceStyle: isBuffet ? 'Buffet' : (isReception ? 'Reception' : 'Plated'),
         eventName: document.getElementById('editEventName').value.trim() || 'Banquet Function',
         eventDate: document.getElementById('editEventDate').value.trim(),
         location: document.getElementById('editLocation').value.trim() || 'Main Ballroom',
@@ -1073,7 +1165,7 @@ For each item return:
           .map(i => ({
             ...i,
             quantity: isBuffet ? 0 : (Number(i.quantity) || 0),
-            unit: isBuffet ? '' : (i.unit || 'portions')
+            unit: isBuffet ? '' : (i.unit || (isReception ? 'doz' : 'portions'))
           }))
       };
 
@@ -1150,6 +1242,9 @@ For each item return:
       if (u === 'portion' || u === 'portions' || u === 'pax' || u === 'ea' || u === 'each' || u === '') {
         return 'portions';
       }
+      if (u === 'dozen' || u === 'dozens' || u === 'doz.') {
+        return 'doz';
+      }
       return u;
     }
 
@@ -1176,17 +1271,42 @@ For each item return:
 
     function parseTimeMinutes(t) {
       if (!t) return 9999;
-      const m = t.trim().toUpperCase().match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/);
-      if (!m) return 9999;
-      let h = parseInt(m[1], 10);
-      const mins = parseInt(m[2], 10);
-      if (m[3] === 'PM' && h < 12) h += 12;
-      if (m[3] === 'AM' && h === 12) h = 0;
-      return h * 60 + mins;
+      const str = String(t).trim().toUpperCase();
+
+      // Match 12-hour or 24-hour time (e.g., "7:30 AM", "12:30 PM", "18:30", "7 AM")
+      const m = str.match(/(\d{1,2})(?::(\d{2}))?\s*(A\.?M\.?|P\.?M\.?)?/);
+      if (m) {
+        let h = parseInt(m[1], 10);
+        const mins = m[2] ? parseInt(m[2], 10) : 0;
+        const mer = (m[3] || '').replace(/\./g, '');
+        if (mer === 'PM' && h < 12) h += 12;
+        if (mer === 'AM' && h === 12) h = 0;
+        if (h >= 0 && h <= 24) {
+          return h * 60 + mins;
+        }
+      }
+
+      // Fallback meal-period ordering: Breakfast -> Lunch -> Reception/Dinner
+      if (/\b(breakfast|brunch|morning)\b/i.test(str)) return 8 * 60;
+      if (/\b(lunch|noon|midday)\b/i.test(str)) return 12 * 60 + 30;
+      if (/\b(reception|cocktail)\b/i.test(str)) return 17 * 60 + 30;
+      if (/\b(dinner|evening|banquet|gala)\b/i.test(str)) return 18 * 60 + 30;
+      return 9999;
+    }
+
+    function getMealPeriodOrder(ev) {
+      const mins = parseTimeMinutes(ev.serviceTime);
+      if (mins < 11 * 60) return 1;        // Breakfast (before 11:00 AM)
+      if (mins < 16 * 60) return 2;        // Lunch (11:00 AM – 3:59 PM)
+      return 3;                            // Dinner / Evening Reception (4:00 PM onward)
     }
 
     function getSortedEvents() {
-      return [...state.events].sort((a, b) => parseTimeMinutes(a.serviceTime) - parseTimeMinutes(b.serviceTime));
+      return [...state.events].sort((a, b) => {
+        const periodDiff = getMealPeriodOrder(a) - getMealPeriodOrder(b);
+        if (periodDiff !== 0) return periodDiff;
+        return parseTimeMinutes(a.serviceTime) - parseTimeMinutes(b.serviceTime);
+      });
     }
 
     function getAggregatedGroups(deptId) {
@@ -1195,6 +1315,7 @@ For each item return:
 
       getSortedEvents().forEach(ev => {
         const isBuffet = ev.serviceStyle === 'Buffet';
+        const isReception = ev.serviceStyle === 'Reception';
         const seenInEvent = new Set();
 
         ev.items.forEach(item => {
@@ -1221,9 +1342,12 @@ For each item return:
             }
             if (!item.completed) bEntry.completed = false;
           } else {
-            const key = makeNormKey(item.name, item.unit);
-            const displayUnit = normalizeUnitLabel(item.unit);
-            const qtyToAdd = Number(item.quantity) > 0 ? Number(item.quantity) : (Number(ev.guestCount) || 0);
+            const rawUnit = item.unit || (isReception ? 'doz' : 'portions');
+            const key = makeNormKey(item.name, rawUnit);
+            const displayUnit = normalizeUnitLabel(rawUnit);
+            const qtyToAdd = Number(item.quantity) > 0
+              ? Number(item.quantity)
+              : (isReception ? 0 : (Number(ev.guestCount) || 0));
             if (!platedMap.has(key)) {
               platedMap.set(key, {
                 key,
@@ -1330,17 +1454,20 @@ For each item return:
 
       return eventsForDept.map(ev => {
         const isBuffet = ev.serviceStyle === 'Buffet';
+        const isReception = ev.serviceStyle === 'Reception';
         const items = ev.items.filter(i => i.department === deptId);
         return `
-          <section class="bg-white rounded-2xl border-2 ${isBuffet ? 'border-amber-400' : 'border-slate-200'} shadow-sm overflow-hidden">
-            <div class="px-4 py-3.5 ${isBuffet ? 'bg-amber-50/60' : 'bg-slate-50'} border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+          <section class="bg-white rounded-2xl border-2 ${isBuffet ? 'border-amber-400' : isReception ? 'border-purple-400' : 'border-slate-200'} shadow-sm overflow-hidden">
+            <div class="px-4 py-3.5 ${isBuffet ? 'bg-amber-50/60' : isReception ? 'bg-purple-50/60' : 'bg-slate-50'} border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div class="flex flex-wrap items-center gap-2 text-xs sm:text-sm font-black">
                   <span class="px-2.5 py-1 rounded-lg bg-slate-900 text-white">${escapeHtml(ev.serviceTime)}</span>
                   <span class="px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-slate-800">${escapeHtml(ev.location)}</span>
                   ${isBuffet
                     ? `<span class="px-2.5 py-1 rounded-lg bg-amber-600 text-white uppercase tracking-wide">BUFFET • ${ev.guestCount} PAX</span>`
-                    : `<span class="px-2.5 py-1 rounded-lg bg-slate-200 text-slate-900 uppercase tracking-wide">PLATED • ${ev.guestCount} PAX</span>`
+                    : isReception
+                      ? `<span class="px-2.5 py-1 rounded-lg bg-purple-700 text-white uppercase tracking-wide">RECEPTION • ${ev.guestCount} PAX</span>`
+                      : `<span class="px-2.5 py-1 rounded-lg bg-slate-200 text-slate-900 uppercase tracking-wide">PLATED • ${ev.guestCount} PAX</span>`
                   }
                 </div>
                 <h2 class="text-base sm:text-lg font-black text-slate-900 mt-1.5">${escapeHtml(ev.eventName)}</h2>
@@ -1371,8 +1498,10 @@ For each item return:
                         ${!isBuffet && item.quantity ? `<span class="text-slate-950 font-black mr-1">${item.quantity}x</span>` : ''}${escapeHtml(item.name)}
                       </span>
                       ${!isBuffet && item.quantity
-                        ? `<span class="px-2.5 py-0.5 rounded-lg ${dept.badge} font-black text-sm shrink-0">${item.quantity} ${escapeHtml(item.unit || 'portions')}</span>`
-                        : `<span class="px-2.5 py-0.5 rounded-lg bg-amber-100 text-amber-950 font-black text-xs uppercase shrink-0">Buffet (${ev.guestCount} Pax)</span>`
+                        ? `<span class="px-2.5 py-0.5 rounded-lg ${dept.badge} font-black text-sm shrink-0">${item.quantity} ${escapeHtml(item.unit || (isReception ? 'doz' : 'portions'))}</span>`
+                        : isReception
+                          ? `<span class="px-2.5 py-0.5 rounded-lg bg-purple-100 text-purple-950 font-black text-xs uppercase shrink-0">Reception (${ev.guestCount} Pax)</span>`
+                          : `<span class="px-2.5 py-0.5 rounded-lg bg-amber-100 text-amber-950 font-black text-xs uppercase shrink-0">Buffet (${ev.guestCount} Pax)</span>`
                       }
                     </div>
                     ${item.notes ? `<p class="text-xs sm:text-sm font-medium text-slate-600 mt-0.5">${escapeHtml(item.notes)}</p>` : ''}
@@ -1469,11 +1598,12 @@ For each item return:
 
           ${eventsForDept.length ? eventsForDept.map(ev => {
             const isBuffet = ev.serviceStyle === 'Buffet';
+            const isReception = ev.serviceStyle === 'Reception';
             const items = ev.items.filter(i => i.department === deptId);
             return `
               <div class="print-section mb-5">
                 <div class="font-black text-base mb-1.5">
-                  ${escapeHtml(ev.serviceTime)} - ${escapeHtml(ev.location)} - ${ev.guestCount} Pax${isBuffet ? ' (Buffet)' : ''}
+                  ${escapeHtml(ev.serviceTime)} - ${escapeHtml(ev.location)} - ${ev.guestCount} Pax${isBuffet ? ' (Buffet)' : isReception ? ' (Reception)' : ''}
                 </div>
                 <div class="pl-6 space-y-1.5">
                   ${items.map(item => `
@@ -1482,7 +1612,7 @@ For each item return:
                         <span class="print-box"></span>
                         <span class="font-bold">${escapeHtml(getShortMenuName(item.name))}</span>
                       </div>
-                      ${!isBuffet && item.quantity ? `<span class="font-extrabold shrink-0">${item.quantity} ${escapeHtml(normalizeUnitLabel(item.unit))}</span>` : ''}
+                      ${!isBuffet && item.quantity ? `<span class="font-extrabold shrink-0">${item.quantity} ${escapeHtml(normalizeUnitLabel(item.unit || (isReception ? 'doz' : 'portions')))}</span>` : ''}
                     </div>
                   `).join('')}
                 </div>
