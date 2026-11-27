@@ -26,8 +26,8 @@
       body {
         background: #ffffff !important;
         color: #000000 !important;
-        font-size: 11.5pt;
-        line-height: 1.45;
+        font-size: 9.5pt;
+        line-height: 1.25;
         padding: 0 !important;
       }
       .no-print {
@@ -36,8 +36,17 @@
       .print-only {
         display: block !important;
       }
+      .print-two-col {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        column-gap: 18px !important;
+        width: 100% !important;
+      }
+      .print-col {
+        min-width: 0 !important;
+      }
       .print-section {
-        margin-bottom: 14px !important;
+        margin-bottom: 8px !important;
         break-inside: avoid;
       }
       .print-page-break {
@@ -46,11 +55,11 @@
       }
       .print-box {
         display: inline-block !important;
-        width: 14px !important;
-        height: 14px !important;
-        border: 1.8px solid #000000 !important;
-        margin-right: 10px !important;
-        vertical-align: -2px;
+        width: 11px !important;
+        height: 11px !important;
+        border: 1.5px solid #000000 !important;
+        margin-right: 7px !important;
+        vertical-align: -1.5px;
         background: #ffffff !important;
       }
       .print-clean-text {
@@ -58,7 +67,7 @@
         opacity: 1 !important;
       }
       @page {
-        margin: 0.4in;
+        margin: 0.35in;
       }
     }
   </style>
@@ -548,8 +557,9 @@
         statusEl.textContent = `Preparing ${files.length} BEO photo${files.length > 1 ? 's' : ''}...`;
         const imageParts = await Promise.all(files.map(file => compressImageToPart(file)));
 
-        statusEl.textContent = `Reading ${files.length} photo${files.length > 1 ? 's' : ''}...`;
-        const extractedEvents = await scanBEOImages(imageParts);
+        const extractedEvents = await scanBEOImages(imageParts, (progressText) => {
+          statusEl.textContent = progressText;
+        });
 
         extractedEvents.forEach(ev => {
           ev.items.forEach(item => {
@@ -568,7 +578,7 @@
         const isKeyIssue = detail.includes('API_KEY') || detail.includes('API key') || detail.includes('400') || detail.includes('403');
         showDialog(
           isKeyIssue ? 'API Key Rejected by Google' : 'Could Not Read BEO Photos',
-          `Reason: ${detail}\n\nTips: Check your API key in the Gear settings, or scan 2–4 clear photos at a time.`,
+          `Reason: ${detail}\n\nTips: Check your API key in the Gear settings, or scan clear photos of the menu pages.`,
           [
             { label: 'Check API Key', primary: true, onClick: () => openSettingsModal() },
             { label: 'Enter Manually', primary: false, onClick: () => openManualEventModal() },
@@ -584,7 +594,7 @@
         reader.onload = () => {
           const img = new Image();
           img.onload = () => {
-            const maxDim = 1400;
+            const maxDim = 1350;
             let w = img.width;
             let h = img.height;
             if (w > maxDim || h > maxDim) {
@@ -595,7 +605,7 @@
             canvas.width = w;
             canvas.height = h;
             canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-            const base64 = canvas.toDataURL('image/jpeg', 0.78).split(',')[1];
+            const base64 = canvas.toDataURL('image/jpeg', 0.76).split(',')[1];
             resolve({ inlineData: { mimeType: 'image/jpeg', data: base64 } });
           };
           img.onerror = () => reject(new Error('Could not decode image file.'));
@@ -612,26 +622,36 @@
 
       for (const model of models) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+        // Retry each model up to 2 times on transient 429/503 demand spikes
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
 
-        if (res.ok) {
-          return await res.json();
-        }
+          if (res.ok) {
+            return await res.json();
+          }
 
-        let errMsg = `HTTP ${res.status}`;
-        try {
-          const errBody = await res.json();
-          if (errBody?.error?.message) errMsg = errBody.error.message;
-        } catch (e) {}
-        lastError = `${model}: ${errMsg}`;
+          let errMsg = `HTTP ${res.status}`;
+          try {
+            const errBody = await res.json();
+            if (errBody?.error?.message) errMsg = errBody.error.message;
+          } catch (e) {}
+          lastError = `${model}: ${errMsg}`;
 
-        // Stop immediately on invalid API key or billing/quota errors
-        if (res.status === 400 || res.status === 403 || res.status === 429) {
-          throw new Error(errMsg);
+          // Stop immediately on invalid API key or bad request
+          if (res.status === 400 || res.status === 403) {
+            throw new Error(errMsg);
+          }
+
+          // Backoff briefly before retrying busy/rate-limited endpoint
+          if ((res.status === 429 || res.status === 503) && attempt === 0) {
+            await new Promise(r => setTimeout(r, 1800));
+            continue;
+          }
+          break;
         }
       }
 
@@ -662,7 +682,7 @@
       throw new Error(lastError);
     }
 
-    async function scanBEOImages(imageParts) {
+    async function scanBEOImages(imageParts, onProgress) {
       const apiKey = (localStorage.getItem(STORAGE_KEY_API) || '').trim();
       if (!apiKey) {
         throw new Error('MISSING_API_KEY');
@@ -671,7 +691,8 @@
       const systemPrompt = `You are a Banquet Chef creating a single daily kitchen prep list from Banquet Event Order (BEO) photos.
 The uploaded photos may contain MULTIPLE DIFFERENT EVENTS or multiple pages of the same event (e.g., Page 1 of 2, Page 2 of 2).
 CRITICAL PAGE GROUPING RULE:
-- Look for the Event Order Number / BEO Number / Function Number printed on each page (such as "BEO #", "Event #", "Order #", or matching function title + date + room).
+- Look carefully at the top header/footer of EVERY page for the Event Order Number / BEO Number / Function Number (such as "BEO #", "Event #", "Order #", "EO #") as well as function title, date, and room.
+- Always populate "eventOrderNumber" accurately on EVERY page so continuation pages from the same BEO can be merged across batches.
 - All pages sharing the SAME Event Order Number (or clearly continuing the same function across multiple pages) MUST be merged into ONE single event object in the "events" array. Do NOT split a multi-page BEO into separate events.
 - Only create separate event objects when pages have DIFFERENT Event Order Numbers or are distinct functions.
 
@@ -701,82 +722,142 @@ Quantity rules by serviceStyle:
 
 For each item return:
 - department: "hotBanquet" | "gardeMange" | "pastry"
-- name: Clean dish name (standardized capitalization so identical items across events match).
+- name: Clear, recognizable dish name (include the core protein/base and key preparation, e.g., "Braised Beef Short Rib" or "Lemon Meringue Tartlet" — never cut off the main ingredient).
 - quantity: Number (exact portions for Plated; ordered dozen/pieces for Reception; 0 for Buffet).
 - unit: Unit string (e.g., "portions" for Plated; "doz" or "pcs" for Reception; "" for Buffet).
 - notes: Concise prep/garnish spec only (e.g., "Red wine demi" or "Passed hot, sesame soy dip").`;
 
-      const payload = {
-        contents: [{
-          role: "user",
-          parts: [
-            { text: "Read these Banquet Event Order (BEO) photos. Group pages with the same Event Order / BEO number into a single event, classify each event as Plated, Buffet, or Reception, and extract all food prep items." },
-            ...imageParts
-          ]
-        }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: {
-          temperature: 0,
-          thinkingConfig: { thinkingBudget: 0 },
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              events: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    eventOrderNumber: { type: "STRING" },
-                    eventName: { type: "STRING" },
-                    eventDate: { type: "STRING" },
-                    serviceStyle: { type: "STRING", enum: ["Plated", "Buffet", "Reception"] },
-                    location: { type: "STRING" },
-                    serviceTime: { type: "STRING" },
-                    guestCount: { type: "NUMBER" },
-                    allergiesAndNotes: { type: "ARRAY", items: { type: "STRING" } },
-                    items: {
-                      type: "ARRAY",
-                      items: {
-                        type: "OBJECT",
-                        properties: {
-                          department: { type: "STRING", enum: ["hotBanquet", "gardeMange", "pastry"] },
-                          name: { type: "STRING" },
-                          quantity: { type: "NUMBER" },
-                          unit: { type: "STRING" },
-                          notes: { type: "STRING" }
-                        },
-                        required: ["department", "name", "quantity", "unit", "notes"]
-                      }
-                    }
-                  },
-                  required: ["eventOrderNumber", "eventName", "eventDate", "serviceStyle", "location", "serviceTime", "guestCount", "allergiesAndNotes", "items"]
-                }
-              }
-            },
-            required: ["events"]
-          }
-        }
-      };
-
-      const data = await callGeminiWithFallback(apiKey, payload);
-      const candidate = data?.candidates?.[0];
-      const text = candidate?.content?.parts?.[0]?.text;
-      if (!text) {
-        const blockReason = candidate?.finishReason || 'No text returned';
-        throw new Error(`Scanner could not extract text (${blockReason}).`);
+      // Automatically split large uploads into chunks of 3 photos to prevent Gemini high-demand spikes
+      const CHUNK_SIZE = 3;
+      const chunks = [];
+      for (let i = 0; i < imageParts.length; i += CHUNK_SIZE) {
+        chunks.push(imageParts.slice(i, i + CHUNK_SIZE));
       }
 
-      const cleanedJson = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-      const parsed = JSON.parse(cleanedJson);
-      const rawEvents = Array.isArray(parsed.events) && parsed.events.length ? parsed.events : [parsed];
+      const rawEvents = [];
+      let lastKnownOrderNum = '';
+      let lastKnownEventMeta = null;
 
-      // Post-process safeguard: merge any multi-page BEOs sharing the same Event Order Number
+      for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
+        if (onProgress) {
+          onProgress(
+            chunks.length > 1
+              ? `Reading batch ${cIdx + 1} of ${chunks.length} (${imageParts.length} photos total)...`
+              : `Reading ${imageParts.length} photo${imageParts.length > 1 ? 's' : ''}...`
+          );
+        }
+
+        const continuationHint = lastKnownOrderNum
+          ? ` Note: The previous page ended on Event Order # "${lastKnownOrderNum}" (${lastKnownEventMeta?.eventName || ''}). If the first page in this batch is a continuation page without a repeated header, assign it the exact same eventOrderNumber "${lastKnownOrderNum}" and event metadata.`
+          : '';
+
+        const payload = {
+          contents: [{
+            role: "user",
+            parts: [
+              { text: `Read these Banquet Event Order (BEO) photos. Group pages with the same Event Order / BEO number into a single event, classify each event as Plated, Buffet, or Reception, and extract all food prep items.${continuationHint}` },
+              ...chunks[cIdx]
+            ]
+          }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: {
+            temperature: 0,
+            thinkingConfig: { thinkingBudget: 0 },
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                events: {
+                  type: "ARRAY",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      eventOrderNumber: { type: "STRING" },
+                      eventName: { type: "STRING" },
+                      eventDate: { type: "STRING" },
+                      serviceStyle: { type: "STRING", enum: ["Plated", "Buffet", "Reception"] },
+                      location: { type: "STRING" },
+                      serviceTime: { type: "STRING" },
+                      guestCount: { type: "NUMBER" },
+                      allergiesAndNotes: { type: "ARRAY", items: { type: "STRING" } },
+                      items: {
+                        type: "ARRAY",
+                        items: {
+                          type: "OBJECT",
+                          properties: {
+                            department: { type: "STRING", enum: ["hotBanquet", "gardeMange", "pastry"] },
+                            name: { type: "STRING" },
+                            quantity: { type: "NUMBER" },
+                            unit: { type: "STRING" },
+                            notes: { type: "STRING" }
+                          },
+                          required: ["department", "name", "quantity", "unit", "notes"]
+                        }
+                      }
+                    },
+                    required: ["eventOrderNumber", "eventName", "eventDate", "serviceStyle", "location", "serviceTime", "guestCount", "allergiesAndNotes", "items"]
+                  }
+                }
+              },
+              required: ["events"]
+            }
+          }
+        };
+
+        const data = await callGeminiWithFallback(apiKey, payload);
+        const candidate = data?.candidates?.[0];
+        const text = candidate?.content?.parts?.[0]?.text;
+        if (!text) {
+          const blockReason = candidate?.finishReason || 'No text returned';
+          throw new Error(`Scanner could not extract text (${blockReason}).`);
+        }
+
+        const cleanedJson = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+        const parsed = JSON.parse(cleanedJson);
+        const chunkEvents = Array.isArray(parsed.events) && parsed.events.length ? parsed.events : [parsed];
+
+        chunkEvents.forEach(ev => {
+          if (ev.eventOrderNumber && ev.eventOrderNumber.trim()) {
+            lastKnownOrderNum = ev.eventOrderNumber.trim();
+            lastKnownEventMeta = ev;
+          } else if (ev.eventName && ev.eventName.trim()) {
+            lastKnownEventMeta = ev;
+          }
+          rawEvents.push(ev);
+        });
+      }
+
+      // Post-process safeguard: merge multi-page BEOs across all chunks by Event Order Number or matching event metadata
       const mergedEventsMap = new Map();
       rawEvents.forEach((ev, eIdx) => {
-        const orderNum = (ev.eventOrderNumber || '').trim().toLowerCase().replace(/^#/, '');
-        const fallbackKey = `${(ev.eventName || '').trim().toLowerCase()}|${(ev.eventDate || '').trim().toLowerCase()}|${(ev.location || '').trim().toLowerCase()}`;
-        const mergeKey = orderNum ? `order:${orderNum}` : (fallbackKey !== '||' ? `meta:${fallbackKey}` : `idx:${eIdx}`);
+        const orderNum = (ev.eventOrderNumber || '').trim().toLowerCase().replace(/^(beo|event|order|eo)?\s*#?:?\s*/i, '').trim();
+        const namePart = (ev.eventName || '').trim().toLowerCase();
+        const datePart = (ev.eventDate || '').trim().toLowerCase();
+        const locPart = (ev.location || '').trim().toLowerCase();
+        const timePart = (ev.serviceTime || '').trim().toLowerCase();
+
+        // Check if an existing event already matches by order number OR by matching event name + date/room/time
+        let mergeKey = '';
+        if (orderNum) {
+          mergeKey = `order:${orderNum}`;
+        } else {
+          for (const [existingKey, existingEv] of mergedEventsMap.entries()) {
+            const exName = (existingEv.eventName || '').trim().toLowerCase();
+            const exDate = (existingEv.eventDate || '').trim().toLowerCase();
+            const exLoc = (existingEv.location || '').trim().toLowerCase();
+            const exTime = (existingEv.serviceTime || '').trim().toLowerCase();
+            const sameName = namePart && exName && (namePart === exName || namePart.includes(exName) || exName.includes(namePart));
+            const sameContext = (datePart && exDate && datePart === exDate) || (locPart && exLoc && locPart === exLoc) || (timePart && exTime && timePart === exTime);
+            if (sameName && sameContext) {
+              mergeKey = existingKey;
+              break;
+            }
+          }
+          if (!mergeKey) {
+            const fallbackKey = `${namePart}|${datePart}|${locPart}`;
+            mergeKey = fallbackKey !== '||' ? `meta:${fallbackKey}` : `idx:${eIdx}`;
+          }
+        }
 
         if (!mergedEventsMap.has(mergeKey)) {
           mergedEventsMap.set(mergeKey, {
@@ -786,6 +867,7 @@ For each item return:
           });
         } else {
           const existing = mergedEventsMap.get(mergeKey);
+          if (!existing.eventOrderNumber && ev.eventOrderNumber) existing.eventOrderNumber = ev.eventOrderNumber;
           if (!existing.eventDate && ev.eventDate) existing.eventDate = ev.eventDate;
           if ((!existing.location || existing.location === 'Main Ballroom') && ev.location) existing.location = ev.location;
           if ((!existing.serviceTime || existing.serviceTime === '18:00') && ev.serviceTime) existing.serviceTime = ev.serviceTime;
@@ -801,7 +883,7 @@ For each item return:
             });
           }
           if (Array.isArray(ev.items)) {
-            existing.items.push(...ev.items);
+            ev.items.push(...ev.items);
           }
         }
       });
@@ -836,11 +918,29 @@ For each item return:
         };
       });
     }
+    // Shorten long menu descriptions while preserving enough words (up to 4-5 meaningful words) so dishes stay clearly identifiable
+    function getShortMenuName(name) {
+      const cleaned = (name || '')
+        .replace(/\([^)]*\)/g, '')
+        .replace(/\s+(?:served\s+with|accompanied\s+by|topped\s+with|garnished\s+with|drizzled\s+with|finished\s+with)\s+.*/i, '')
+        .replace(/\s+with\s+.*/i, '')
+        .replace(/,.*$/, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const words = cleaned.split(/\s+/).filter(Boolean);
+      if (words.length <= 4) return words.join(' ');
+
+      // Keep 4 words, or 5 words if the 4th word is a connector like "&", "and", "of", "in", "on", "a la"
+      const connectors = new Set(['&', 'and', 'of', 'in', 'on', 'au', 'aux', 'de', 'du', 'la', 'le']);
+      const fourth = words[3].toLowerCase();
+      if (connectors.has(fourth) && words.length >= 5) {
+        return words.slice(0, 5).join(' ');
+      }
+      return words.slice(0, 4).join(' ');
+    }
 
     function detectEventServiceStyle(ev) {
-      if (ev.serviceStyle === 'Reception' || ev.serviceStyle === 'Buffet' || ev.serviceStyle === 'Plated') {
-        if (ev.serviceStyle === 'Reception') return 'Reception';
-      }
       const textBlob = [
         ev.eventName || '',
         ...(ev.allergiesAndNotes || []),
@@ -1579,7 +1679,8 @@ For each item return:
     }
 
     // Build Minimalist 1-to-2 Page Print Sheet Guided by "Prep List Template"
-    // Page 1: By Event (Date -> Time - Room - # of People -> indented 2-3 word menu items)
+    // 50-50 two-column split down the middle with events listed chronologically across both sides
+    // Page 1: By Event (Date -> Time - Room - # of People -> indented menu items)
     // Page 2 (Separate Page): Total Prep Summary (Deduplicated totals across all events)
     function printPrepList() {
       const deptId = state.activeTab;
@@ -1589,68 +1690,95 @@ For each item return:
       const beoDates = [...new Set(state.events.map(ev => (ev.eventDate || '').trim()).filter(Boolean))];
       const prepDateLabel = beoDates.length ? beoDates.join(' / ') : todayLabel;
 
+      const renderPrintEventCard = (ev) => {
+        const isBuffet = ev.serviceStyle === 'Buffet';
+        const isReception = ev.serviceStyle === 'Reception';
+        const items = ev.items.filter(i => i.department === deptId);
+        return `
+          <div class="print-section mb-2.5">
+            <div class="font-black text-xs leading-snug mb-0.5">
+              ${escapeHtml(ev.serviceTime)} - ${escapeHtml(ev.location)} - ${ev.guestCount} Pax${isBuffet ? ' (Buffet)' : isReception ? ' (Reception)' : ''}
+            </div>
+            <div class="pl-4 space-y-0.5">
+              ${items.map(item => `
+                <div class="flex items-baseline justify-between gap-2 text-xs leading-snug">
+                  <div>
+                    <span class="print-box"></span>
+                    <span class="font-bold">${escapeHtml(getShortMenuName(item.name))}</span>
+                  </div>
+                  ${!isBuffet && item.quantity ? `<span class="font-extrabold shrink-0">${item.quantity} ${escapeHtml(normalizeUnitLabel(item.unit || (isReception ? 'doz' : 'portions')))}</span>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      };
+
+      const midIndex = Math.ceil(eventsForDept.length / 2);
+      const leftEvents = eventsForDept.slice(0, midIndex);
+      const rightEvents = eventsForDept.slice(midIndex);
+
+      const totalPrepRows = [
+        ...plated.map(g => `
+          <div class="flex items-baseline justify-between gap-2 text-xs leading-snug py-0.5">
+            <div>
+              <span class="print-box"></span>
+              <span class="font-extrabold">${escapeHtml(getShortMenuName(g.name))}</span>
+            </div>
+            <span class="font-black shrink-0">${g.totalQty} ${escapeHtml(g.unit)}</span>
+          </div>
+        `),
+        ...buffet.map(b => `
+          <div class="flex items-baseline justify-between gap-2 text-xs leading-snug py-0.5">
+            <div>
+              <span class="print-box"></span>
+              <span class="font-extrabold">${escapeHtml(getShortMenuName(b.name))}</span>
+            </div>
+            <span class="font-black shrink-0">Buffet · ${b.guestCount} Pax</span>
+          </div>
+        `)
+      ];
+      const totalMidIndex = Math.ceil(totalPrepRows.length / 2);
+      const leftTotals = totalPrepRows.slice(0, totalMidIndex);
+      const rightTotals = totalPrepRows.slice(totalMidIndex);
+
       const sheetHtml = `
-        <!-- PAGE 1: BY EVENT (MATCHING PREP LIST TEMPLATE) -->
+        <!-- PAGE 1: BY EVENT (50-50 TWO-COLUMN CHRONOLOGICAL SPLIT) -->
         <div>
-          <div class="mb-4">
-            <span class="text-xl font-black underline">${escapeHtml(prepDateLabel)}</span>
+          <div class="mb-2 flex items-baseline justify-between">
+            <span class="text-sm font-black underline">${escapeHtml(prepDateLabel)}</span>
+            <span class="text-xs font-black uppercase">${escapeHtml(dept.label)}</span>
           </div>
 
-          ${eventsForDept.length ? eventsForDept.map(ev => {
-            const isBuffet = ev.serviceStyle === 'Buffet';
-            const isReception = ev.serviceStyle === 'Reception';
-            const items = ev.items.filter(i => i.department === deptId);
-            return `
-              <div class="print-section mb-5">
-                <div class="font-black text-base mb-1.5">
-                  ${escapeHtml(ev.serviceTime)} - ${escapeHtml(ev.location)} - ${ev.guestCount} Pax${isBuffet ? ' (Buffet)' : isReception ? ' (Reception)' : ''}
-                </div>
-                <div class="pl-6 space-y-1.5">
-                  ${items.map(item => `
-                    <div class="flex items-baseline justify-between gap-4 text-base">
-                      <div>
-                        <span class="print-box"></span>
-                        <span class="font-bold">${escapeHtml(getShortMenuName(item.name))}</span>
-                      </div>
-                      ${!isBuffet && item.quantity ? `<span class="font-extrabold shrink-0">${item.quantity} ${escapeHtml(normalizeUnitLabel(item.unit || (isReception ? 'doz' : 'portions')))}</span>` : ''}
-                    </div>
-                  `).join('')}
-                </div>
+          ${eventsForDept.length ? `
+            <div class="print-two-col">
+              <div class="print-col">
+                ${leftEvents.map(renderPrintEventCard).join('')}
               </div>
-            `;
-          }).join('') : `<p class="text-sm font-semibold">No events scheduled.</p>`}
+              <div class="print-col">
+                ${rightEvents.map(renderPrintEventCard).join('')}
+              </div>
+            </div>
+          ` : `<p class="text-xs font-semibold">No events scheduled.</p>`}
         </div>
 
-        <!-- PAGE 2: TOTAL PREP (SEPARATE PAGE, DEDUPLICATED TOTALS) -->
+        <!-- PAGE 2: TOTAL PREP (SEPARATE PAGE, 50-50 TWO-COLUMN SPLIT) -->
         <div class="print-page-break">
-          <div class="mb-4 flex items-baseline justify-between">
-            <span class="text-xl font-black uppercase">TOTAL PREP — ${escapeHtml(dept.label)}</span>
-            <span class="text-base font-black">${escapeHtml(prepDateLabel)}</span>
+          <div class="mb-2 flex items-baseline justify-between gap-2">
+            <span class="text-sm font-black uppercase">TOTAL PREP — ${escapeHtml(dept.label)}</span>
+            <span class="text-xs font-black">${escapeHtml(prepDateLabel)}</span>
           </div>
 
-          <div class="pl-2 space-y-2">
-            ${plated.map(g => `
-              <div class="flex items-baseline justify-between gap-4 text-base py-1">
-                <div>
-                  <span class="print-box"></span>
-                  <span class="font-extrabold">${escapeHtml(getShortMenuName(g.name))}</span>
-                </div>
-                <span class="font-black shrink-0">${g.totalQty} ${escapeHtml(g.unit)}</span>
+          ${totalPrepRows.length ? `
+            <div class="print-two-col">
+              <div class="print-col pl-1 space-y-0.5">
+                ${leftTotals.join('')}
               </div>
-            `).join('')}
-
-            ${buffet.map(b => `
-              <div class="flex items-baseline justify-between gap-4 text-base py-1">
-                <div>
-                  <span class="print-box"></span>
-                  <span class="font-extrabold">${escapeHtml(getShortMenuName(b.name))}</span>
-                </div>
-                <span class="font-black shrink-0">Buffet · ${b.guestCount} Pax</span>
+              <div class="print-col pl-1 space-y-0.5">
+                ${rightTotals.join('')}
               </div>
-            `).join('')}
-
-            ${!plated.length && !buffet.length ? `<p class="text-sm font-semibold">No items scheduled.</p>` : ''}
-          </div>
+            </div>
+          ` : `<p class="text-xs font-semibold">No items scheduled.</p>`}
         </div>
       `;
 
@@ -1665,11 +1793,13 @@ For each item return:
           printWin.document.write(`<!DOCTYPE html><html><head><title>${dept.label} Prep List</title>
             <script src="https://cdn.tailwindcss.com"><\/script>
             <style>
-              body { font-family: Inter, -apple-system, sans-serif; color: #000; background: #fff; font-size: 11.5pt; line-height: 1.45; padding: 24px; }
-              .print-section { margin-bottom: 14px; break-inside: avoid; }
+              body { font-family: Inter, -apple-system, sans-serif; color: #000; background: #fff; font-size: 9.5pt; line-height: 1.25; padding: 18px; }
+              .print-two-col { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; width: 100%; }
+              .print-col { min-width: 0; }
+              .print-section { margin-bottom: 8px; break-inside: avoid; }
               .print-page-break { break-before: page; page-break-before: always; }
-              .print-box { display: inline-block; width: 14px; height: 14px; border: 1.8px solid #000; margin-right: 10px; vertical-align: -2px; }
-              @page { margin: 0.4in; }
+              .print-box { display: inline-block; width: 11px; height: 11px; border: 1.5px solid #000; margin-right: 7px; vertical-align: -1.5px; }
+              @page { margin: 0.35in; }
             </style>
           </head><body>${sheetHtml}<script>setTimeout(() => { window.print(); }, 400);<\/script></body></html>`);
           printWin.document.close();
